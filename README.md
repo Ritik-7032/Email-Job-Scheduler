@@ -4,6 +4,14 @@ An email job scheduling system built with TypeScript, Express, BullMQ, Redis, Po
 
 ---
 
+## 🌐 Live Deployments
+
+- 🚀 **Frontend Web Application (Vercel)**: [https://email-job-scheduler-alpha.vercel.app](https://email-job-scheduler-alpha.vercel.app)
+- ⚙️ **Backend API & Queue Worker (Render)**: [https://reachinbox-scheduler-backend.onrender.com](https://reachinbox-scheduler-backend.onrender.com)
+- 📦 **GitHub Repository**: [https://github.com/Ritik-7032/Email-Job-Scheduler](https://github.com/Ritik-7032/Email-Job-Scheduler)
+
+---
+
 ## Architecture Overview
 
 The system schedules and sends email batches with per-sender minimum delays and hourly rate limits. The API server and background worker are separate processes.
