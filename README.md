@@ -61,6 +61,24 @@ The system schedules and sends email batches with per-sender minimum delays and 
 
 ---
 
+## Requirement to Implementation Mapping
+
+| Assignment Requirement | Technical Implementation |
+| :--- | :--- |
+| **No cron / No in-memory scheduler** | BullMQ delayed jobs (`jobId = email.id`, `delay = scheduledAt - now`) |
+| **Persistence across restarts** | PostgreSQL relational DB (source of truth) + Redis AOF persistence |
+| **Idempotency & Concurrency** | Stable UUID job IDs + Atomic raw SQL conditional claims (`UPDATE ... WHERE status = 'scheduled'`) |
+| **Rate Limiting & Minimum Delay** | Atomic Redis Lua script combining sender gap key (`gap:ID`) and UTC hourly counter (`rate:ID:window`) |
+| **Rescheduling on Limit** | `job.moveToDelayed(Date.now() + waitMs, token)` followed by BullMQ `DelayedError` |
+| **Worker Concurrency** | Separate BullMQ Worker process (`concurrency = 5`) |
+| **Multiple Senders** | PostgreSQL `Sender` table with round-robin sender assignment during batch creation |
+| **Restart Recovery** | Redis AOF queue survival + Startup orphan requeuer (`enqueuedAt IS NULL`) |
+| **SMTP Delivery** | Nodemailer with dynamically seeded Ethereal accounts and test preview links |
+| **Authentication** | Real Google OAuth 2.0 with state verification and signed HTTP-only JWT cookies |
+| **Frontend Dashboard** | React + Vite + Tailwind CSS with Scheduled/Sent tabs, paginated tables, CSV parser, and Compose Modal |
+
+---
+
 ## Folder Structure
 
 ```

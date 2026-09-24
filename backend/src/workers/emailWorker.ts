@@ -52,11 +52,12 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
   }
 
   const { batch, sender } = email;
+  const effectiveLimit = Math.min(batch.hourlyLimit, env.MAX_EMAILS_PER_HOUR);
 
   const { allowed, waitMs, windowKey } = await checkAndAcquireSenderSlot(
     sender.id,
     batch.delayMs,
-    batch.hourlyLimit
+    effectiveLimit
   );
 
   if (!allowed && waitMs > 0) {
