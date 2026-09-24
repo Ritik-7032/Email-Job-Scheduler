@@ -12,51 +12,63 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 class ApiClient {
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit & { timeoutMs?: number } = {}
   ): Promise<T> {
+    const { timeoutMs = 6000, ...fetchOptions } = options;
     const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
-    const config: RequestInit = {
-      ...options,
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    };
 
-    const res = await fetch(url, config);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    if (!res.ok) {
-      let errorData: { error?: ApiError } | null = null;
-      try {
-        errorData = await res.json();
-      } catch {
-        // Fallback for non-JSON error bodies
+    try {
+      const config: RequestInit = {
+        ...fetchOptions,
+        signal: controller.signal,
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...fetchOptions.headers,
+        },
+      };
+
+      const res = await fetch(url, config);
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        let errorData: { error?: ApiError } | null = null;
+        try {
+          errorData = await res.json();
+        } catch {
+          // Fallback for non-JSON error bodies
+        }
+
+        let message =
+          errorData?.error?.message ||
+          `Request failed with status ${res.status}: ${res.statusText}`;
+
+        if (errorData?.error?.details && errorData.error.details.length > 0) {
+          message = errorData.error.details.map((d) => d.message).join('. ');
+        }
+
+        const error: Error & {
+          details?: Array<{ field: string; message: string }>;
+          status?: number;
+        } = new Error(message);
+        error.details = errorData?.error?.details;
+        error.status = res.status;
+        throw error;
       }
 
-      let message =
-        errorData?.error?.message ||
-        `Request failed with status ${res.status}: ${res.statusText}`;
-
-      if (errorData?.error?.details && errorData.error.details.length > 0) {
-        message = errorData.error.details.map((d) => d.message).join('. ');
-      }
-
-      const error: Error & {
-        details?: Array<{ field: string; message: string }>;
-        status?: number;
-      } = new Error(message);
-      error.details = errorData?.error?.details;
-      error.status = res.status;
-      throw error;
+      return res.json();
+    } catch (err) {
+      clearTimeout(timeoutId);
+      throw err;
     }
-
-    return res.json();
   }
 
   // Auth Endpoints
   async getMe(): Promise<User> {
-    return this.request<User>('/api/auth/me');
+    return this.request<User>('/api/auth/me', { timeoutMs: 5000 });
   }
 
   async logout(): Promise<{ success: boolean; message: string }> {
