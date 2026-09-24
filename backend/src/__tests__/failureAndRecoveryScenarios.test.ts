@@ -232,4 +232,96 @@ describe('Critical Failure, Concurrency, and Recovery Scenarios', () => {
       }),
     });
   });
+
+  it('Scenario 7: >500 Orphan Recovery recovers large orphan backlog (1500 rows) in chunked loop', async () => {
+    const chunk1 = Array.from({ length: 500 }, (_, i) => ({
+      id: `orphan-c1-${i}`,
+      scheduledAt: new Date(Date.now() + 10000 + i * 100),
+      status: EmailStatus.scheduled,
+      enqueuedAt: null,
+      createdAt: new Date(Date.now() - 120000),
+    }));
+
+    const chunk2 = Array.from({ length: 500 }, (_, i) => ({
+      id: `orphan-c2-${i}`,
+      scheduledAt: new Date(Date.now() + 60000 + i * 100),
+      status: EmailStatus.scheduled,
+      enqueuedAt: null,
+      createdAt: new Date(Date.now() - 120000),
+    }));
+
+    const chunk3 = Array.from({ length: 250 }, (_, i) => ({
+      id: `orphan-c3-${i}`,
+      scheduledAt: new Date(Date.now() + 120000 + i * 100),
+      status: EmailStatus.scheduled,
+      enqueuedAt: null,
+      createdAt: new Date(Date.now() - 120000),
+    }));
+
+    const findManySpy = vi.spyOn(prisma.email, 'findMany')
+      .mockResolvedValueOnce(chunk1 as any)
+      .mockResolvedValueOnce(chunk2 as any)
+      .mockResolvedValueOnce(chunk3 as any);
+
+    const addBulkSpy = vi.spyOn(emailQueue, 'addBulk').mockResolvedValue([] as any);
+    const updateManySpy = vi.spyOn(prisma.email, 'updateMany').mockResolvedValue({ count: 500 });
+
+    const requeuedCount = await requeueOrphanedEmails(500);
+
+    expect(requeuedCount).toBe(1250);
+    expect(findManySpy).toHaveBeenCalledTimes(3);
+    expect(addBulkSpy).toHaveBeenCalledTimes(3);
+    expect(updateManySpy).toHaveBeenCalledTimes(3);
+  });
+
+  it('Scenario 8: Stale processing recovery marks dispatched emails as sent and resets recoverable crashes', async () => {
+    const staleSentEmail = {
+      id: 'stale-sent-1',
+      status: EmailStatus.processing,
+      processingStartedAt: new Date(Date.now() - 600000),
+      messageId: '<smtp-msg-delivered@ethereal.email>',
+      attempts: 1,
+    };
+
+    const staleMaxAttemptsEmail = {
+      id: 'stale-exhausted-2',
+      status: EmailStatus.processing,
+      processingStartedAt: new Date(Date.now() - 600000),
+      messageId: null,
+      attempts: 3,
+    };
+
+    const staleRecoverableEmail = {
+      id: 'stale-retry-3',
+      status: EmailStatus.processing,
+      processingStartedAt: new Date(Date.now() - 600000),
+      messageId: null,
+      attempts: 1,
+    };
+
+    vi.spyOn(prisma.email, 'findMany').mockResolvedValueOnce([
+      staleSentEmail,
+      staleMaxAttemptsEmail,
+      staleRecoverableEmail,
+    ] as any);
+
+    const updateSpy = vi.spyOn(prisma.email, 'update').mockResolvedValue({} as any);
+
+    const { recoverStaleProcessingEmails } = await import('../services/requeueService.js');
+    const recoveredCount = await recoverStaleProcessingEmails(300000);
+
+    expect(recoveredCount).toBe(3);
+    expect(updateSpy).toHaveBeenCalledWith({
+      where: { id: 'stale-sent-1' },
+      data: expect.objectContaining({ status: 'sent' }),
+    });
+    expect(updateSpy).toHaveBeenCalledWith({
+      where: { id: 'stale-exhausted-2' },
+      data: expect.objectContaining({ status: 'failed' }),
+    });
+    expect(updateSpy).toHaveBeenCalledWith({
+      where: { id: 'stale-retry-3' },
+      data: expect.objectContaining({ status: 'scheduled', enqueuedAt: null, processingStartedAt: null }),
+    });
+  });
 });

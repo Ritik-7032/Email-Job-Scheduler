@@ -43,7 +43,11 @@ export async function scheduleEmails(
     },
   }));
 
-  await emailQueue.addBulk(jobs);
+  const QUEUE_CHUNK_SIZE = 1000;
+  for (let i = 0; i < jobs.length; i += QUEUE_CHUNK_SIZE) {
+    const chunk = jobs.slice(i, i + QUEUE_CHUNK_SIZE);
+    await emailQueue.addBulk(chunk);
+  }
 
   const emailIds = emails.map((e) => e.id);
   await markEmailsAsEnqueued(emailIds);

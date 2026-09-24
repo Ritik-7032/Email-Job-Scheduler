@@ -18,6 +18,8 @@ export interface CreatedBatchResult {
   emails: Email[];
 }
 
+const DB_CHUNK_SIZE = 1000;
+
 export async function createBatchWithEmails(
   input: CreateBatchInput
 ): Promise<CreatedBatchResult> {
@@ -25,6 +27,7 @@ export async function createBatchWithEmails(
     input;
 
   const startTimeMs = startAt.getTime();
+  const now = new Date();
 
   return prisma.$transaction(async (tx) => {
     const batch = await tx.batch.create({
@@ -36,7 +39,7 @@ export async function createBatchWithEmails(
       },
     });
 
-    const emailData = recipients.map((recipient, index) => {
+    const emailData: Email[] = recipients.map((recipient, index) => {
       const assignedSender = senders[index % senders.length];
       const scheduledAt = new Date(startTimeMs + index * delayMs);
       return {
@@ -50,25 +53,39 @@ export async function createBatchWithEmails(
         scheduledAt,
         status: EmailStatus.scheduled,
         attempts: 0,
+        sentAt: null,
+        errorMessage: null,
+        messageId: null,
+        previewUrl: null,
+        enqueuedAt: null,
+        processingStartedAt: null,
+        createdAt: now,
+        updatedAt: now,
       };
     });
 
-    await tx.email.createMany({
-      data: emailData,
-    });
-
-    const createdEmails = await tx.email.findMany({
-      where: {
-        batchId: batch.id,
-      },
-      orderBy: {
-        scheduledAt: 'asc',
-      },
-    });
+    // Chunk DB inserts to prevent parameter overflow and memory bloat on large campaigns (1000+)
+    for (let i = 0; i < emailData.length; i += DB_CHUNK_SIZE) {
+      const chunk = emailData.slice(i, i + DB_CHUNK_SIZE);
+      await tx.email.createMany({
+        data: chunk.map((e) => ({
+          id: e.id,
+          userId: e.userId,
+          batchId: e.batchId,
+          senderId: e.senderId,
+          recipient: e.recipient,
+          subject: e.subject,
+          body: e.body,
+          scheduledAt: e.scheduledAt,
+          status: e.status,
+          attempts: e.attempts,
+        })),
+      });
+    }
 
     return {
       batch,
-      emails: createdEmails,
+      emails: emailData,
     };
   });
 }
@@ -76,14 +93,18 @@ export async function createBatchWithEmails(
 export async function markEmailsAsEnqueued(emailIds: string[]): Promise<void> {
   if (emailIds.length === 0) return;
 
-  await prisma.email.updateMany({
-    where: {
-      id: { in: emailIds },
-    },
-    data: {
-      enqueuedAt: new Date(),
-    },
-  });
+  const now = new Date();
+  for (let i = 0; i < emailIds.length; i += DB_CHUNK_SIZE) {
+    const chunk = emailIds.slice(i, i + DB_CHUNK_SIZE);
+    await prisma.email.updateMany({
+      where: {
+        id: { in: chunk },
+      },
+      data: {
+        enqueuedAt: now,
+      },
+    });
+  }
 }
 
 export async function getScheduledEmails(

@@ -2,17 +2,20 @@ import app from './app.js';
 import { env } from './config/env.js';
 import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
-import { requeueOrphanedEmails } from './services/requeueService.js';
+import { runStartupRecovery } from './services/requeueService.js';
 
 async function bootstrap() {
-  // Requeue any orphaned scheduled emails from previous ungraceful stops
+  // Reconcile stale processing records and requeue orphaned scheduled emails on server startup
   try {
-    const requeued = await requeueOrphanedEmails();
-    if (requeued > 0) {
-      logger.info({ count: requeued }, 'Re-enqueued orphaned scheduled emails on server startup');
+    const { staleRecovered, orphanedRequeued } = await runStartupRecovery();
+    if (staleRecovered > 0 || orphanedRequeued > 0) {
+      logger.info(
+        { staleRecovered, orphanedRequeued },
+        'Completed startup recovery reconciling stale and orphaned email jobs'
+      );
     }
   } catch (err) {
-    logger.warn({ err }, 'Could not run startup requeue check');
+    logger.warn({ err }, 'Could not run startup recovery check');
   }
 
   const server = app.listen(env.PORT, () => {

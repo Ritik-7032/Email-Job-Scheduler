@@ -164,18 +164,66 @@ describe('Batch Staggering and Queue Job Dispatching', () => {
     const queuedJobs = addBulkSpy.mock.calls[0][0];
 
     expect(queuedJobs.length).toBe(2);
-    expect(queuedJobs[0].opts.jobId).toBe('uuid-email-0');
-    expect(queuedJobs[0].data.emailId).toBe('uuid-email-0');
+    expect(queuedJobs[0].opts.jobId).toBeDefined();
+    expect(queuedJobs[0].opts.jobId).toBe(queuedJobs[0].data.emailId);
     expect(queuedJobs[0].opts.delay).toBeGreaterThanOrEqual(9000);
 
-    expect(queuedJobs[1].opts.jobId).toBe('uuid-email-1');
-    expect(queuedJobs[1].data.emailId).toBe('uuid-email-1');
+    expect(queuedJobs[1].opts.jobId).toBeDefined();
+    expect(queuedJobs[1].opts.jobId).toBe(queuedJobs[1].data.emailId);
     expect(queuedJobs[1].opts.delay).toBeGreaterThanOrEqual(12000);
 
     expect(updateManySpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: { in: ['uuid-email-0', 'uuid-email-1'] } },
+        where: { id: { in: [queuedJobs[0].data.emailId, queuedJobs[1].data.emailId] } },
       })
     );
+  });
+
+  it('handles 1000+ recipients with batched DB inserts and chunked BullMQ addBulk calls', async () => {
+    const recipientCount = 1250;
+    const recipients = Array.from({ length: recipientCount }, (_, i) => `bulk-user-${i}@example.com`);
+    const startAt = new Date(Date.now() + 60000);
+    const delayMs = 2000;
+
+    vi.spyOn(senderRepo, 'getAllSenders').mockResolvedValue(mockSenders);
+
+    const createManySpy = vi.fn().mockResolvedValue({ count: 1000 });
+    const batchCreateSpy = vi.fn().mockResolvedValue({
+      id: 'batch-1000-plus',
+      userId: 'user-bulk',
+      delayMs,
+      hourlyLimit: 200,
+      startAt,
+      createdAt: new Date(),
+    });
+
+    vi.spyOn(prisma, '$transaction').mockImplementation(async (callback: any) => {
+      return callback({
+        batch: {
+          create: batchCreateSpy,
+        },
+        email: {
+          createMany: createManySpy,
+        },
+      });
+    });
+
+    const addBulkSpy = vi.spyOn(emailQueue, 'addBulk').mockResolvedValue([] as any);
+    const updateManySpy = vi.spyOn(prisma.email, 'updateMany').mockResolvedValue({ count: 1000 });
+
+    const response = await scheduleEmails('user-bulk', {
+      subject: 'Large Scale Blast',
+      body: 'Important Notification to all users',
+      recipients,
+      startAt: startAt.toISOString(),
+      delayMs,
+      hourlyLimit: 200,
+    });
+
+    expect(response.count).toBe(1250);
+    // 1250 items split into 1000 + 250 chunks = 2 calls
+    expect(createManySpy).toHaveBeenCalledTimes(2);
+    expect(addBulkSpy).toHaveBeenCalledTimes(2);
+    expect(updateManySpy).toHaveBeenCalledTimes(2);
   });
 });

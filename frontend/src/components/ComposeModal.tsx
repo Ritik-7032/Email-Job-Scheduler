@@ -48,8 +48,8 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({
 
     if (recipients.length === 0) {
       newErrors.recipients = 'Please upload a CSV or TXT file with valid email addresses';
-    } else if (recipients.length > 1000) {
-      newErrors.recipients = 'Maximum 1,000 recipients allowed per schedule batch';
+    } else if (recipients.length > 10000) {
+      newErrors.recipients = 'Maximum 10,000 recipients allowed per schedule batch';
     }
 
     if (!startAtLocal) {

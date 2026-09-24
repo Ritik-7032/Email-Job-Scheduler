@@ -35,9 +35,10 @@ class ApiClient {
         errorData?.error?.message ||
         `Request failed with status ${res.status}: ${res.statusText}`;
 
-      const error: Error & { details?: any; status?: number } = new Error(
-        message
-      );
+      const error: Error & {
+        details?: Array<{ field: string; message: string }>;
+        status?: number;
+      } = new Error(message);
       error.details = errorData?.error?.details;
       error.status = res.status;
       throw error;

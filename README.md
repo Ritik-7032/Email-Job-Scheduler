@@ -154,7 +154,7 @@ cp backend/.env.example backend/.env
 | `MAX_EMAILS_PER_HOUR` | Maximum allowed hourly limit per sender | `200` |
 | `DEFAULT_DELAY_MS` | Default delay in UI | `2000` |
 | `DEFAULT_HOURLY_LIMIT` | Default hourly limit in UI | `200` |
-| `MAX_RECIPIENTS_PER_REQUEST` | Maximum recipient count in a single request | `1000` |
+| `MAX_RECIPIENTS_PER_REQUEST` | Maximum recipient count in a single request | `10000` |
 | `STALE_PROCESSING_MS` | Crash recovery duration for stuck processing rows | `300000` (5 mins) |
 
 ---
@@ -243,14 +243,14 @@ Access the dashboard at `http://localhost:5173`.
 ## Scheduling Flow & Rate Limiting Mechanics
 
 ### 1. Ingestion & Staggering
-1. `POST /api/emails/schedule` validates input with Zod (`delayMs >= 2000`, `hourlyLimit <= 200`, valid future ISO `startAt`, max 1000 recipients).
+1. `POST /api/emails/schedule` validates input with Zod (`delayMs >= 2000`, `hourlyLimit <= 200`, valid future ISO `startAt`, max 10000 recipients).
 2. Within a single PostgreSQL transaction:
    - Creates a `Batch` record.
    - Computes staggered `scheduledAt = startAt + index * delayMs` for each recipient.
    - Assigns senders round-robin across active senders in the database.
-   - Bulk inserts all `Email` records (`createMany`).
-3. Enqueues jobs to BullMQ via `queue.addBulk()` with `jobId = email.id` and `delay = max(0, scheduledAt - now)`.
-4. Marks `enqueuedAt = now` in PostgreSQL and returns `{ batchId, count }`.
+   - Ingests `Email` records into PostgreSQL in chunks of 1,000 (`DB_CHUNK_SIZE = 1000`) to prevent parameter overflow and high peak memory.
+3. Enqueues jobs to BullMQ via `queue.addBulk()` in chunks of 1,000 with `jobId = email.id` and `delay = max(0, scheduledAt - now)`.
+4. Marks `enqueuedAt = now` in PostgreSQL in chunks of 1,000 and returns `{ batchId, count }`.
 
 ### 2. Redis Lua Rate Limiter & Minimum Delay Gate
 Before dispatching an email, the worker runs an atomic Lua script evaluating two gates for the assigned sender:
@@ -292,28 +292,30 @@ WHERE "id" = $id
 - If SMTP send fails: the reserved hourly slot is decremented, attempts are incremented, and if retry attempts remain, status is set to `scheduled` and the error is rethrown for BullMQ exponential backoff.
 - If SMTP send succeeds: the status update to `sent` is retried with backoff to prevent duplicate dispatches if the database experiences transient contention.
 
-### Enqueue Failure Window
+### Enqueue & Crash Recovery Window
 - If the API server crashes after inserting database rows but before BullMQ enqueueing finishes, the rows remain with `enqueuedAt = null`.
-- On API startup and via `npm run requeue`, the system queries rows where `status = 'scheduled' AND enqueuedAt IS NULL AND createdAt < (now - 1 minute)` and enqueues them using their stable UUID `jobId`.
+- On API startup and via `npm run requeue`, `requeueOrphanedEmails()` executes a chunked while-loop (fetching in chunks of 500) to recover any volume of orphaned records (>500 or 1000+) without loading the entire backlog into memory, enqueueing them with their stable UUID `jobId`.
+- Additionally, `recoverStaleProcessingEmails()` inspects rows stuck in `processing`: if `messageId` was already assigned, status is safely reconciled to `sent`; if attempts are exhausted, status is marked `failed`; otherwise, status is reset to `scheduled` for safe re-enqueueing and retry.
 
 ---
 
 ## Handling 1000+ Emails
 
-The system handles large recipient lists without blocking the API:
-1. **Request Payload**: Express JSON body size is configured for 2MB, accommodating lists up to 1,000 recipients.
-2. **Database Ingestion**: Uses a single `prisma.batch.create` and `prisma.email.createMany` inside a single transaction rather than individual row queries.
-3. **Queue Enqueueing**: Uses `queue.addBulk(jobs)` in a single Redis round-trip instead of iterative `add()` calls.
-4. **Worker Throughput**: The worker processes jobs concurrently (`WORKER_CONCURRENCY = 5`), staggering load across multiple Ethereal senders.
+The system easily scales to 1,000+ and 10,000 recipients without blocking the API or exhausting resources:
+1. **Request Payload**: Express JSON body size is configured for 2MB, accommodating large recipient arrays.
+2. **Database Ingestion**: Uses a single `Batch` creation and chunked `prisma.email.createMany` in slices of 1,000 (`DB_CHUNK_SIZE`) inside a single transaction.
+3. **Queue Enqueueing**: Uses `queue.addBulk(jobs)` in chunks of 1,000 to prevent Redis command buffer saturation.
+4. **Non-blocking API**: The API immediately returns `{ batchId, count }` upon queue dispatch; SMTP delivery is handled purely asynchronously by background workers.
+5. **Worker Concurrency & Rate Control**: Concurrency (`WORKER_CONCURRENCY = 5`) and Lua rate gating govern throughput smoothly without spikes.
 
 ---
 
-## Assumptions and Shortcuts
+## Assumptions and Shortcuts / Trade-Offs
 
-1. **Google OAuth**: A single verified Google account creates or logs into a user account.
+1. **Google OAuth**: A single verified Google account creates or logs into a user account with signed HTTP-only JWT session cookies.
 2. **Ethereal Test Senders**: Test accounts are generated dynamically on startup/seeding rather than using production SMTP credentials.
 3. **UTC Hourly Windows**: Hourly limits reset at the start of each UTC hour (e.g. `14:00:00 UTC`), rather than on a rolling 60-minute sliding window.
-4. **Exactly-Once Delivery Boundary**: Database claims prevent duplicate processing under normal operation. If a crash occurs after SMTP accepts a message but before the database records `sent`, a duplicate could occur on recovery. True exactly-once delivery requires provider-level idempotency key support.
+4. **SMTP/DB Failure Window Trade-off**: Sending an email via SMTP is an external non-transactional network operation that cannot be joined into an atomic two-phase commit (2PC) with PostgreSQL. Under normal operations, atomic SQL row claims prevent duplicate worker dispatches. If a worker process crashes precisely after SMTP accepts a message but before PostgreSQL commits the `sent` status, the recovery process uses `messageId` tracking and backoff retries to minimize any risk of duplicate sending. True exactly-once delivery across external SMTP gateways is physically impossible without downstream mail server idempotency keying.
 
 ---
 

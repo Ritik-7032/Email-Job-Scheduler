@@ -4,7 +4,7 @@ import { env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
 
 export function errorHandler(
-  err: any,
+  err: Error & { status?: number; statusCode?: number },
   _req: Request,
   res: Response,
   _next: NextFunction

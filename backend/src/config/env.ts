@@ -26,7 +26,7 @@ const envSchema = z.object({
   MAX_EMAILS_PER_HOUR: z.coerce.number().min(1).default(200),
   DEFAULT_DELAY_MS: z.coerce.number().min(0).default(2000),
   DEFAULT_HOURLY_LIMIT: z.coerce.number().min(1).default(200),
-  MAX_RECIPIENTS_PER_REQUEST: z.coerce.number().min(1).default(1000),
+  MAX_RECIPIENTS_PER_REQUEST: z.coerce.number().min(1).default(10000),
   STALE_PROCESSING_MS: z.coerce.number().min(1000).default(300000),
 });
 
