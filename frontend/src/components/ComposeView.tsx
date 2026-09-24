@@ -39,6 +39,15 @@ export const ComposeView: React.FC<ComposeViewProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const datePickerInputRef = useRef<HTMLInputElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+
+  const execCmd = (cmd: string, value: string | undefined = undefined) => {
+    if (editorRef.current) {
+      editorRef.current.focus();
+      document.execCommand(cmd, false, value);
+      setBody(editorRef.current.innerHTML);
+    }
+  };
 
   const [toInput, setToInput] = useState('');
   const [recipients, setRecipients] = useState<string[]>([]);
@@ -47,18 +56,11 @@ export const ComposeView: React.FC<ComposeViewProps> = ({
   const [delayMs, setDelayMs] = useState<string>('00');
   const [hourlyLimit, setHourlyLimit] = useState<string>('00');
   const [startAtLocal, setStartAtLocal] = useState(getDefaultStartTimeLocal());
+  const [hasUserCustomizedTime, setHasUserCustomizedTime] = useState(false);
   const [selectedPresetLabel, setSelectedPresetLabel] = useState<string | null>(null);
   const [isSendLaterOpen, setIsSendLaterOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [attachments, setAttachments] = useState<EmailAttachment[]>([
-    {
-      id: 'default-tennis',
-      name: 'photo_match.png',
-      size: 245000,
-      type: 'image/png',
-      dataUrl: 'https://images.unsplash.com/photo-1595435934249-5df7ed86e1c0?auto=format&fit=crop&w=800&q=80',
-    },
-  ]);
+  const [attachments, setAttachments] = useState<EmailAttachment[]>([]);
 
   // General Attachment Upload Handler (Images, PDFs, Docs)
   const handleAttachmentSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -123,10 +125,12 @@ export const ComposeView: React.FC<ComposeViewProps> = ({
     const minutes = String(d.getMinutes()).padStart(2, '0');
     setStartAtLocal(`${year}-${month}-${day}T${hours}:${minutes}`);
     setSelectedPresetLabel(label);
+    setHasUserCustomizedTime(true);
   };
 
   const handleCustomDateChange = (val: string) => {
     setStartAtLocal(val);
+    setHasUserCustomizedTime(true);
     if (val) {
       const d = new Date(val);
       const formatted = new Intl.DateTimeFormat(undefined, {
@@ -164,7 +168,15 @@ export const ComposeView: React.FC<ComposeViewProps> = ({
 
     setIsSubmitting(true);
     try {
-      const startAtUtc = localDatetimeToUtcIso(startAtLocal);
+      // Recalculate schedule timestamp dynamically if not customized or if expired
+      let effectiveStartAtLocal = startAtLocal;
+      const parsedStartMs = new Date(effectiveStartAtLocal).getTime();
+
+      if (!hasUserCustomizedTime || isNaN(parsedStartMs) || parsedStartMs <= Date.now() + 10000) {
+        effectiveStartAtLocal = getDefaultStartTimeLocal();
+      }
+
+      const startAtUtc = localDatetimeToUtcIso(effectiveStartAtLocal);
 
       const delayNum = parseInt(delayMs, 10);
       const hourlyNum = parseInt(hourlyLimit, 10);
@@ -370,20 +382,24 @@ export const ComposeView: React.FC<ComposeViewProps> = ({
             Type Your Reply...
           </div>
 
-          {/* Floating Pill Toolbar with exact symbols */}
+          {/* Floating Pill Toolbar with exact functional handlers */}
           <div className="bg-white rounded-full border border-slate-200/80 shadow-[0_2px_8px_rgba(0,0,0,0.04)] px-4 py-2 flex items-center gap-3.5 w-fit overflow-x-auto select-none">
             {/* 1. Undo / Redo */}
             <div className="flex items-center gap-2 text-slate-500">
               <button
                 type="button"
-                className="p-1 hover:text-slate-800 transition-colors"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => execCmd('undo')}
+                className="p-1 hover:text-slate-800 transition-colors cursor-pointer"
                 title="Undo"
               >
                 <Undo2 className="w-4 h-4 stroke-[1.8]" />
               </button>
               <button
                 type="button"
-                className="p-1 hover:text-slate-800 transition-colors"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => execCmd('redo')}
+                className="p-1 hover:text-slate-800 transition-colors cursor-pointer"
                 title="Redo"
               >
                 <Redo2 className="w-4 h-4 stroke-[1.8]" />
@@ -394,6 +410,8 @@ export const ComposeView: React.FC<ComposeViewProps> = ({
 
             {/* 2. Text Style / Size (TT with up-down arrows) */}
             <div
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => execCmd('fontSize', '4')}
               className="flex items-center gap-1 text-slate-600 hover:text-slate-900 cursor-pointer px-1 py-0.5 rounded transition-colors"
               title="Font Size"
             >
@@ -412,28 +430,36 @@ export const ComposeView: React.FC<ComposeViewProps> = ({
             <div className="flex items-center gap-2.5 text-slate-600">
               <button
                 type="button"
-                className="px-1 text-sm font-bold hover:text-slate-900 transition-colors"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => execCmd('bold')}
+                className="px-1 text-sm font-bold hover:text-slate-900 transition-colors cursor-pointer"
                 title="Bold"
               >
                 B
               </button>
               <button
                 type="button"
-                className="px-1 text-sm font-serif italic hover:text-slate-900 transition-colors"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => execCmd('italic')}
+                className="px-1 text-sm font-serif italic hover:text-slate-900 transition-colors cursor-pointer"
                 title="Italic"
               >
                 I
               </button>
               <button
                 type="button"
-                className="px-1 text-sm underline underline-offset-2 hover:text-slate-900 transition-colors"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => execCmd('underline')}
+                className="px-1 text-sm underline underline-offset-2 hover:text-slate-900 transition-colors cursor-pointer"
                 title="Underline"
               >
                 U
               </button>
               <div
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => execCmd('justifyCenter')}
                 className="flex items-center gap-1 hover:text-slate-900 cursor-pointer px-1 py-0.5 transition-colors"
-                title="Alignment & Line Height"
+                title="Center Alignment"
               >
                 <svg
                   className="w-4 h-4 stroke-[1.8]"
@@ -459,7 +485,9 @@ export const ComposeView: React.FC<ComposeViewProps> = ({
               {/* Numbered List */}
               <button
                 type="button"
-                className="p-1 hover:text-slate-900 transition-colors"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => execCmd('insertOrderedList')}
+                className="p-1 hover:text-slate-900 transition-colors cursor-pointer"
                 title="Numbered List"
               >
                 <svg
@@ -480,7 +508,9 @@ export const ComposeView: React.FC<ComposeViewProps> = ({
               {/* Bullet List */}
               <button
                 type="button"
-                className="p-1 hover:text-slate-900 transition-colors"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => execCmd('insertUnorderedList')}
+                className="p-1 hover:text-slate-900 transition-colors cursor-pointer"
                 title="Bullet List"
               >
                 <svg
@@ -501,7 +531,9 @@ export const ComposeView: React.FC<ComposeViewProps> = ({
               {/* Outdent (Decrease Indent) */}
               <button
                 type="button"
-                className="p-1 hover:text-slate-900 transition-colors"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => execCmd('outdent')}
+                className="p-1 hover:text-slate-900 transition-colors cursor-pointer"
                 title="Decrease Indent"
               >
                 <svg
@@ -520,7 +552,9 @@ export const ComposeView: React.FC<ComposeViewProps> = ({
               {/* Indent (Increase Indent) */}
               <button
                 type="button"
-                className="p-1 hover:text-slate-900 transition-colors"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => execCmd('indent')}
+                className="p-1 hover:text-slate-900 transition-colors cursor-pointer"
                 title="Increase Indent"
               >
                 <svg
@@ -531,7 +565,7 @@ export const ComposeView: React.FC<ComposeViewProps> = ({
                 >
                   <polyline points="17 8 21 12 17 16" strokeLinecap="round" strokeLinejoin="round" />
                   <line x1="3" y1="6" x2="13" y2="6" strokeLinecap="round" />
-                  <line x1="3" y1="12" x2="13" y2="12" strokeLinecap="round" />
+                  <line x1="3" y1="12" x2="13" y2="13" strokeLinecap="round" />
                   <line x1="3" y1="18" x2="13" y2="18" strokeLinecap="round" />
                 </svg>
               </button>
@@ -539,7 +573,9 @@ export const ComposeView: React.FC<ComposeViewProps> = ({
               {/* Quote */}
               <button
                 type="button"
-                className="p-1 hover:text-slate-900 transition-colors"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => execCmd('formatBlock', 'blockquote')}
+                className="p-1 hover:text-slate-900 transition-colors cursor-pointer"
                 title="Quote"
               >
                 <svg
@@ -551,11 +587,13 @@ export const ComposeView: React.FC<ComposeViewProps> = ({
                 </svg>
               </button>
 
-              {/* Flag / Paragraph Bookmark */}
+              {/* Flag / Paragraph Highlight */}
               <button
                 type="button"
-                className="p-1 hover:text-slate-900 transition-colors"
-                title="Bookmark / Flag"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => execCmd('hiliteColor', '#fef08a')}
+                className="p-1 hover:text-slate-900 transition-colors cursor-pointer"
+                title="Highlight"
               >
                 <svg
                   className="w-4 h-4 stroke-[1.8]"
@@ -579,7 +617,9 @@ export const ComposeView: React.FC<ComposeViewProps> = ({
             <div className="flex items-center text-slate-600">
               <button
                 type="button"
-                className="px-1 text-sm font-serif line-through hover:text-slate-900 transition-colors font-medium select-none"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => execCmd('strikeThrough')}
+                className="px-1 text-sm font-serif line-through hover:text-slate-900 transition-colors font-medium select-none cursor-pointer"
                 title="Strikethrough"
               >
                 S
@@ -587,12 +627,24 @@ export const ComposeView: React.FC<ComposeViewProps> = ({
             </div>
           </div>
 
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            placeholder="Write your email body here..."
-            className="flex-1 w-full p-2 border-none resize-none focus:outline-none text-sm text-slate-800 placeholder-slate-400 leading-relaxed font-normal min-h-[200px] bg-transparent"
-          />
+          <div className="relative flex-1 flex flex-col min-h-[220px]">
+            {(!body || body === '<br>' || body.trim() === '') && (
+              <div className="absolute top-2 left-2 text-sm text-slate-400 pointer-events-none select-none">
+                Write your email body here...
+              </div>
+            )}
+            <div
+              ref={editorRef}
+              contentEditable
+              suppressContentEditableWarning
+              onInput={() => {
+                if (editorRef.current) {
+                  setBody(editorRef.current.innerHTML);
+                }
+              }}
+              className="flex-1 w-full p-2 border-none resize-none focus:outline-none text-sm text-slate-800 leading-relaxed font-normal min-h-[200px] bg-transparent overflow-y-auto"
+            />
+          </div>
 
           {/* Attachments Section (Images, PDFs, Documents) matching uploaded screenshots */}
           {attachments.length > 0 && (

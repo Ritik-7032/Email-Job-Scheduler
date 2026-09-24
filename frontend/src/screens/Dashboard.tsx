@@ -78,25 +78,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
   );
 
   useEffect(() => {
-    if (activeTab === 'scheduled') {
-      fetchScheduled(scheduledOffset);
-    } else {
-      fetchSent(sentOffset);
-    }
+    fetchScheduled(scheduledOffset);
+    fetchSent(sentOffset);
   }, [activeTab, scheduledOffset, sentOffset, fetchScheduled, fetchSent]);
 
   const handleRefresh = () => {
-    if (activeTab === 'scheduled') {
-      fetchScheduled(scheduledOffset);
-    } else {
-      fetchSent(sentOffset);
-    }
+    fetchScheduled(scheduledOffset);
+    fetchSent(sentOffset);
   };
 
   const handleScheduleSuccess = () => {
     setActiveTab('scheduled');
     setScheduledOffset(0);
     fetchScheduled(0);
+    fetchSent(0);
   };
 
   const toggleStar = (id: string, e: React.MouseEvent) => {

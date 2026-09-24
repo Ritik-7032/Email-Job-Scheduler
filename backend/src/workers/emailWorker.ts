@@ -111,7 +111,10 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
   let sendInfo: nodemailer.SentMessageInfo;
   try {
     const formatBodyToHtml = (content: string) => {
-      return content
+      let html = content
+        .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+        .replace(/\*(.*?)\*/g, '<i>$1</i>')
+        .replace(/~~(.*?)~~/g, '<s>$1</s>')
         .replace(
           /!\[(.*?)\]\((.*?)\)/g,
           '<div style="margin: 12px 0;"><img src="$2" alt="$1" style="max-width: 100%; max-height: 400px; border-radius: 12px; display: block;" /></div>'
@@ -119,8 +122,12 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
         .replace(
           /📎\s*\[Attachment:\s*(.*?)\]\((.*?)\)/g,
           '<div style="margin: 8px 0;"><a href="$2" download="$1" style="display:inline-block; padding:8px 14px; background:#f4f6f5; border:1px solid #e0e0e0; border-radius:8px; text-decoration:none; color:#1a1a1a; font-family:sans-serif; font-size:12px; font-weight:600;">📎 $1</a></div>'
-        )
-        .replace(/\n/g, '<br/>');
+        );
+
+      if (!/<[a-z][\s\S]*>/i.test(content)) {
+        html = html.replace(/\n/g, '<br/>');
+      }
+      return html;
     };
 
     sendInfo = await transporter.sendMail({

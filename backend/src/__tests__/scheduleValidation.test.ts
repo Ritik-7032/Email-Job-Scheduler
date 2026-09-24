@@ -1,8 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../app.js';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
+import { prisma } from '../lib/prisma.js';
 
 describe('Schedule API Request Validation and Authentication', () => {
   const validUser = {
@@ -16,6 +17,16 @@ describe('Schedule API Request Validation and Authentication', () => {
   const authCookie = `token=${token}`;
 
   const futureIso = new Date(Date.now() + 3600000).toISOString();
+
+  beforeEach(() => {
+    vi.spyOn(prisma.user, 'findUnique').mockImplementation(async ({ where }: any) => {
+      if (where.id === validUser.id) {
+        return validUser as any;
+      }
+      return null;
+    });
+  });
+
 
   it('rejects unauthenticated requests with 401', async () => {
     const res = await request(app)
