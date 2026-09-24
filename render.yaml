@@ -1,0 +1,56 @@
+services:
+  # 1. Backend Web Service API
+  - type: web
+    name: reachinbox-scheduler-backend
+    env: node
+    rootDir: backend
+    buildCommand: npm install && npm run build && npx prisma db push
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromRedis:
+          name: reachinbox-redis
+          property: connectionString
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_CALLBACK_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+
+  # 2. Email Worker Background Queue Service
+  - type: worker
+    name: reachinbox-scheduler-worker
+    env: node
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start:worker
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromRedis:
+          name: reachinbox-redis
+          property: connectionString
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+
+# 3. Redis Instance for BullMQ Rate Limiter
+redis:
+  - name: reachinbox-redis
+    ipAllowList: []
+    plan: free
