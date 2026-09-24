@@ -289,7 +289,7 @@ WHERE "id" = $id
 
 ### SMTP Dispatch and Status Persistence
 - The SMTP send and the database `status = 'sent'` update are handled in separate stages.
-- If SMTP send fails: the reserved hourly slot is decremented, attempts are incremented, and if retry attempts remain, status is set to `scheduled` and the error is rethrown for BullMQ exponential backoff.
+- If SMTP send fails: the reserved hourly slot is decremented, attempts are incremented, and if retry attempts remain within the 3 total attempts limit (1 initial attempt + 2 retries), status is set to `scheduled` and the error is rethrown for BullMQ exponential backoff (5s base). Upon exhausting all 3 attempts, status is permanently set to `failed` with the error reason recorded.
 - If SMTP send succeeds: the status update to `sent` is retried with backoff to prevent duplicate dispatches if the database experiences transient contention.
 
 ### Enqueue & Crash Recovery Window
