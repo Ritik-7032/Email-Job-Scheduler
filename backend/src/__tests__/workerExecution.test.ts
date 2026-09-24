@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { processEmailJob } from '../workers/emailWorker.js';
+import { processEmailJob, clearTransporterCache } from '../workers/emailWorker.js';
 import { prisma } from '../lib/prisma.js';
 import * as rateLimiter from '../services/rateLimiter.js';
 import { DelayedError } from 'bullmq';
 import nodemailer from 'nodemailer';
 import { EmailStatus } from '@prisma/client';
 
-describe('Worker Execution Engine (Requirements 5, 6, 7)', () => {
+describe('Worker Lifecycle and Job Processing Engine', () => {
   const mockEmail = {
     id: 'email-123',
     userId: 'user-1',
@@ -53,9 +53,10 @@ describe('Worker Execution Engine (Requirements 5, 6, 7)', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    clearTransporterCache();
   });
 
-  it('reschedules with DelayedError when rate limited (Requirement 5)', async () => {
+  it('reschedules with DelayedError when rate limited', async () => {
     vi.spyOn(prisma.email, 'findUnique').mockResolvedValue(mockEmail as any);
     const updateSpy = vi.spyOn(prisma.email, 'update').mockResolvedValue({} as any);
     vi.spyOn(rateLimiter, 'checkAndAcquireSenderSlot').mockResolvedValue({
@@ -74,11 +75,10 @@ describe('Worker Execution Engine (Requirements 5, 6, 7)', () => {
       expect.any(Number),
       'mock-token-xyz'
     );
-    // Email in database remains scheduled, no status change
     expect(updateSpy).not.toHaveBeenCalled();
   });
 
-  it('skips already sent or failed emails (Requirement 6 - Idempotency)', async () => {
+  it('skips already sent or failed emails', async () => {
     vi.spyOn(prisma.email, 'findUnique').mockResolvedValue({
       ...mockEmail,
       status: EmailStatus.sent,
@@ -96,27 +96,37 @@ describe('Worker Execution Engine (Requirements 5, 6, 7)', () => {
     expect(acquireSpy).not.toHaveBeenCalled();
   });
 
-  it('skips if atomic claim fails due to concurrent worker (Requirement 6 - Concurrency)', async () => {
-    vi.spyOn(prisma.email, 'findUnique').mockResolvedValue(mockEmail as any);
+  it('delays job until stale timeout when claiming a recently crashed stalled job', async () => {
+    const processingStartedAt = new Date(Date.now() - 30000); // 30s ago (< 5m)
+    vi.spyOn(prisma.email, 'findUnique')
+      .mockResolvedValueOnce(mockEmail as any)
+      .mockResolvedValueOnce({
+        status: EmailStatus.processing,
+        processingStartedAt,
+      } as any);
+
     vi.spyOn(rateLimiter, 'checkAndAcquireSenderSlot').mockResolvedValue({
       allowed: true,
       waitMs: 0,
       windowKey: '2026092414',
     });
-    // Atomic update raw query returns 0 affected rows (already claimed by another worker)
     vi.spyOn(prisma, '$executeRaw').mockResolvedValue(0 as any);
     const releaseSpy = vi.spyOn(rateLimiter, 'releaseHourlySlot').mockResolvedValue();
-    const updateSpy = vi.spyOn(prisma.email, 'update').mockResolvedValue({} as any);
 
     const mockJob = createMockJob();
 
-    await processEmailJob(mockJob as any, 'token');
+    await expect(
+      processEmailJob(mockJob as any, 'token-stalled')
+    ).rejects.toThrow(DelayedError);
 
     expect(releaseSpy).toHaveBeenCalledWith('sender-1', '2026092414');
-    expect(updateSpy).not.toHaveBeenCalled();
+    expect(mockJob.moveToDelayed).toHaveBeenCalledWith(
+      expect.any(Number),
+      'token-stalled'
+    );
   });
 
-  it('sends email successfully, updates status to sent and records previewUrl (Requirement 7 - Success)', async () => {
+  it('sends email successfully, updates status to sent and records previewUrl', async () => {
     vi.spyOn(prisma.email, 'findUnique').mockResolvedValue(mockEmail as any);
     vi.spyOn(rateLimiter, 'checkAndAcquireSenderSlot').mockResolvedValue({
       allowed: true,
@@ -154,7 +164,7 @@ describe('Worker Execution Engine (Requirements 5, 6, 7)', () => {
     });
   });
 
-  it('handles transient failure: sets status back to scheduled, releases slot and rethrows (Requirement 7 - Retry)', async () => {
+  it('handles transient SMTP failure: sets status back to scheduled, releases slot and rethrows', async () => {
     vi.spyOn(prisma.email, 'findUnique').mockResolvedValue(mockEmail as any);
     vi.spyOn(rateLimiter, 'checkAndAcquireSenderSlot').mockResolvedValue({
       allowed: true,
@@ -170,7 +180,7 @@ describe('Worker Execution Engine (Requirements 5, 6, 7)', () => {
     const releaseSpy = vi.spyOn(rateLimiter, 'releaseHourlySlot').mockResolvedValue();
     const updateSpy = vi.spyOn(prisma.email, 'update').mockResolvedValue({} as any);
 
-    const mockJob = createMockJob(0, 3); // 1st attempt out of 3
+    const mockJob = createMockJob(0, 3);
 
     await expect(processEmailJob(mockJob as any, 'token')).rejects.toThrow('SMTP Connection timeout');
 
@@ -185,7 +195,7 @@ describe('Worker Execution Engine (Requirements 5, 6, 7)', () => {
     });
   });
 
-  it('handles final failure: marks email as failed when all attempts exhausted (Requirement 7 - Final Failure)', async () => {
+  it('handles final attempt failure: marks email as failed when attempts exhausted', async () => {
     vi.spyOn(prisma.email, 'findUnique').mockResolvedValue({
       ...mockEmail,
       attempts: 2,
@@ -204,9 +214,8 @@ describe('Worker Execution Engine (Requirements 5, 6, 7)', () => {
     const releaseSpy = vi.spyOn(rateLimiter, 'releaseHourlySlot').mockResolvedValue();
     const updateSpy = vi.spyOn(prisma.email, 'update').mockResolvedValue({} as any);
 
-    const mockJob = createMockJob(2, 3); // 3rd attempt (final attempt: 2 + 1 = 3)
+    const mockJob = createMockJob(2, 3);
 
-    // On final attempt, error is caught and marked as failed without throwing
     await processEmailJob(mockJob as any, 'token');
 
     expect(releaseSpy).toHaveBeenCalledWith('sender-1', '2026092414');

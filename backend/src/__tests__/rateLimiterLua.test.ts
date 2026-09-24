@@ -6,17 +6,16 @@ import {
 } from '../services/rateLimiter.js';
 import { redis } from '../lib/redis.js';
 
-describe('Rate Limiter Lua Script Logic (Requirement 4)', () => {
+describe('Atomic Rate Limiter and Sender Gap Gate', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('computes correct UTC hour window and msToNextHour', () => {
+  it('computes correct UTC hour window and msToNextHour offset', () => {
     const fixedDate = new Date('2026-09-24T14:15:30.000Z');
     const { windowKey, msToNextHour } = getUtcHourWindow(fixedDate);
 
     expect(windowKey).toBe('2026092414');
-    // From 14:15:30 to 15:00:00 is 44 minutes and 30 seconds = 2670000 ms
     expect(msToNextHour).toBe(2670000);
   });
 
@@ -30,8 +29,7 @@ describe('Rate Limiter Lua Script Logic (Requirement 4)', () => {
     expect(result.windowKey).toBeDefined();
   });
 
-  it('rejects with waitMs when sender is in minimum gap interval', async () => {
-    // Lua returns remaining gap TTL, e.g. 1500ms
+  it('rejects with waitMs when sender is within minimum delay interval', async () => {
     vi.spyOn(redis, 'eval').mockResolvedValue(1500);
 
     const result = await checkAndAcquireSenderSlot('sender-1', 2000, 100);
@@ -41,7 +39,6 @@ describe('Rate Limiter Lua Script Logic (Requirement 4)', () => {
   });
 
   it('rejects with msToNextHour when hourly limit is reached', async () => {
-    // Lua returns remaining ms in current UTC hour, e.g. 1800000 (30 mins)
     vi.spyOn(redis, 'eval').mockResolvedValue(1800000);
 
     const result = await checkAndAcquireSenderSlot('sender-1', 2000, 100);

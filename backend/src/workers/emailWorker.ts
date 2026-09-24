@@ -7,10 +7,32 @@ import { EMAIL_QUEUE_NAME } from '../queue/emailQueue.js';
 import { checkAndAcquireSenderSlot, releaseHourlySlot } from '../services/rateLimiter.js';
 import { ScheduleJobData } from '../types/index.js';
 
+export const transporterCache = new Map<string, nodemailer.Transporter>();
+
+export function clearTransporterCache(): void {
+  transporterCache.clear();
+}
+
+function getOrCreateTransporter(sender: { id: string; smtpUser: string; smtpPassword: string }): nodemailer.Transporter {
+  let transporter = transporterCache.get(sender.id);
+  if (!transporter) {
+    transporter = nodemailer.createTransport({
+      host: env.SMTP_HOST,
+      port: env.SMTP_PORT,
+      secure: env.SMTP_SECURE,
+      auth: {
+        user: sender.smtpUser,
+        pass: sender.smtpPassword,
+      },
+    });
+    transporterCache.set(sender.id, transporter);
+  }
+  return transporter;
+}
+
 export async function processEmailJob(job: Job<ScheduleJobData>, token?: string): Promise<void> {
   const { emailId } = job.data;
 
-  // 1. Load email
   const email = await prisma.email.findUnique({
     where: { id: emailId },
     include: {
@@ -31,7 +53,6 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
 
   const { batch, sender } = email;
 
-  // 2. Check & acquire rate/gap slot
   const { allowed, waitMs, windowKey } = await checkAndAcquireSenderSlot(
     sender.id,
     batch.delayMs,
@@ -52,7 +73,6 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
     throw new DelayedError();
   }
 
-  // 3. Atomic claim
   const now = new Date();
   const staleTime = new Date(Date.now() - env.STALE_PROCESSING_MS);
 
@@ -69,52 +89,37 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
   `;
 
   if (Number(affectedRows) === 0) {
-    logger.info({ emailId }, 'Email already claimed or not in schedulable state');
     await releaseHourlySlot(sender.id, windowKey);
+    const current = await prisma.email.findUnique({
+      where: { id: emailId },
+      select: { status: true, processingStartedAt: true },
+    });
+    if (current?.status === 'processing' && current.processingStartedAt && token) {
+      const delayUntilStale = Math.max(
+        1000,
+        current.processingStartedAt.getTime() + env.STALE_PROCESSING_MS + 1000 - Date.now()
+      );
+      await job.moveToDelayed(Date.now() + delayUntilStale, token);
+      throw new DelayedError();
+    }
     return;
   }
 
-  // 4. Send email via nodemailer
-  const transporter = nodemailer.createTransport({
-    host: env.SMTP_HOST,
-    port: env.SMTP_PORT,
-    secure: env.SMTP_SECURE,
-    auth: {
-      user: sender.smtpUser,
-      pass: sender.smtpPassword,
-    },
-  });
+  const transporter = getOrCreateTransporter(sender);
 
+  let sendInfo: nodemailer.SentMessageInfo;
   try {
-    const info = await transporter.sendMail({
+    sendInfo = await transporter.sendMail({
       from: `"${sender.email}" <${sender.email}>`,
       to: email.recipient,
       subject: email.subject,
       text: email.body,
       html: email.body.replace(/\n/g, '<br/>'),
     });
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    logger.error({ emailId, err: error.message }, 'Email failed');
 
-    const previewUrl = nodemailer.getTestMessageUrl(info) || null;
-
-    await prisma.email.update({
-      where: { id: emailId },
-      data: {
-        status: 'sent',
-        sentAt: new Date(),
-        messageId: info.messageId,
-        previewUrl: previewUrl ? String(previewUrl) : null,
-        errorMessage: null,
-      },
-    });
-
-    logger.info(
-      { emailId, recipient: email.recipient, messageId: info.messageId, previewUrl },
-      'Email sent'
-    );
-  } catch (err: any) {
-    logger.error({ emailId, err: err.message }, 'Email failed');
-
-    // Release reserved slot
     await releaseHourlySlot(sender.id, windowKey);
 
     const nextAttempts = email.attempts + 1;
@@ -126,22 +131,56 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
         data: {
           status: 'scheduled',
           attempts: nextAttempts,
-          errorMessage: err.message || 'SMTP dispatch error',
+          errorMessage: error.message,
         },
       });
-      throw err;
+      throw error;
     } else {
       await prisma.email.update({
         where: { id: emailId },
         data: {
           status: 'failed',
           attempts: nextAttempts,
-          errorMessage: err.message || 'SMTP dispatch error',
+          errorMessage: error.message,
         },
       });
+      return;
     }
   }
 
+  // Once SMTP accepts the message, status update is retried separately to prevent duplicate sending
+  const previewUrl = nodemailer.getTestMessageUrl(sendInfo) || null;
+  let dbUpdateSuccess = false;
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await prisma.email.update({
+        where: { id: emailId },
+        data: {
+          status: 'sent',
+          sentAt: new Date(),
+          messageId: sendInfo.messageId,
+          previewUrl: previewUrl ? String(previewUrl) : null,
+          errorMessage: null,
+        },
+      });
+      dbUpdateSuccess = true;
+      break;
+    } catch (dbErr: unknown) {
+      const dbError = dbErr instanceof Error ? dbErr : new Error(String(dbErr));
+      logger.warn({ emailId, attempt, err: dbError.message }, 'Retrying DB update to sent status');
+      await new Promise((res) => setTimeout(res, 200 * attempt));
+    }
+  }
+
+  if (!dbUpdateSuccess) {
+    logger.error({ emailId, messageId: sendInfo.messageId }, 'Failed to record sent status after successful SMTP dispatch');
+  }
+
+  logger.info(
+    { emailId, recipient: email.recipient, messageId: sendInfo.messageId, previewUrl },
+    'Email sent'
+  );
   logger.info({ jobId: job.id, emailId }, 'Job processed');
 }
 

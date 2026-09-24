@@ -20,7 +20,6 @@ export async function scheduleEmails(
 
   const startAt = new Date(input.startAt);
 
-  // 1. Create batch and emails in DB transaction
   const { batch, emails } = await createBatchWithEmails({
     userId,
     subject: input.subject,
@@ -32,7 +31,6 @@ export async function scheduleEmails(
     senders,
   });
 
-  // 2. Prepare BullMQ delayed jobs
   const now = Date.now();
   const jobs = emails.map((email) => ({
     name: 'send-email',
@@ -45,10 +43,8 @@ export async function scheduleEmails(
     },
   }));
 
-  // 3. Enqueue jobs into BullMQ
   await emailQueue.addBulk(jobs);
 
-  // 4. Mark enqueuedAt in database
   const emailIds = emails.map((e) => e.id);
   await markEmailsAsEnqueued(emailIds);
 

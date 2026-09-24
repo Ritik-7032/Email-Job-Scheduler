@@ -6,7 +6,7 @@ import { emailQueue } from '../queue/emailQueue.js';
 import * as senderRepo from '../repositories/senderRepository.js';
 import { Sender, EmailStatus } from '@prisma/client';
 
-describe('Batch Staggering & Enqueueing (Requirements 2 & 3)', () => {
+describe('Batch Staggering and Queue Job Dispatching', () => {
   const mockSenders: Sender[] = [
     {
       id: 'sender-1',
@@ -91,7 +91,6 @@ describe('Batch Staggering & Enqueueing (Requirements 2 & 3)', () => {
     expect(result.emails[1].scheduledAt.getTime()).toBe(startAt.getTime() + 2000);
     expect(result.emails[2].scheduledAt.getTime()).toBe(startAt.getTime() + 4000);
 
-    // Verify round-robin sender assignment
     expect(result.emails[0].senderId).toBe('sender-1');
     expect(result.emails[1].senderId).toBe('sender-2');
     expect(result.emails[2].senderId).toBe('sender-1');
@@ -173,7 +172,6 @@ describe('Batch Staggering & Enqueueing (Requirements 2 & 3)', () => {
     expect(queuedJobs[1].data.emailId).toBe('uuid-email-1');
     expect(queuedJobs[1].opts.delay).toBeGreaterThanOrEqual(12000);
 
-    // Verify enqueuedAt updated
     expect(updateManySpy).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: { in: ['uuid-email-0', 'uuid-email-1'] } },

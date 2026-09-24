@@ -28,7 +28,12 @@ export async function handleGoogleAuthCallback(
     res.clearCookie('oauth_state');
 
     if (!code || !state) {
-      res.redirect(`${env.FRONTEND_URL}/login?error=invalid_callback_params`);
+      res.redirect(`${env.FRONTEND_URL}/login?error=missing_params`);
+      return;
+    }
+
+    if (!storedState || state !== storedState) {
+      res.redirect(`${env.FRONTEND_URL}/login?error=invalid_state`);
       return;
     }
 
@@ -46,7 +51,11 @@ export async function handleGoogleAuthCallback(
     });
 
     res.redirect(env.FRONTEND_URL);
-  } catch (err) {
+  } catch (err: unknown) {
+    if (err instanceof Error) {
+      res.redirect(`${env.FRONTEND_URL}/login?error=${encodeURIComponent(err.message)}`);
+      return;
+    }
     next(err);
   }
 }

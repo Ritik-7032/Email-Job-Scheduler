@@ -5,16 +5,24 @@ import { logger } from '../lib/logger.js';
 export async function requeueOrphanedEmails(): Promise<number> {
   const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
 
-  const pendingEmails = await prisma.email.findMany({
-    where: {
-      status: 'scheduled',
-      enqueuedAt: null,
-      createdAt: {
-        lt: oneMinuteAgo,
+  let pendingEmails;
+  try {
+    pendingEmails = await prisma.email.findMany({
+      where: {
+        status: 'scheduled',
+        enqueuedAt: null,
+        createdAt: {
+          lt: oneMinuteAgo,
+        },
       },
-    },
-    take: 500,
-  });
+      take: 500,
+    });
+  } catch (err: any) {
+    if (err?.code === 'P2021') {
+      return 0;
+    }
+    throw err;
+  }
 
   if (pendingEmails.length === 0) {
     return 0;

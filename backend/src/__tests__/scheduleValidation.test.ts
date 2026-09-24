@@ -4,7 +4,7 @@ import app from '../app.js';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 
-describe('Schedule API Validation & Auth (Requirement 1)', () => {
+describe('Schedule API Request Validation and Authentication', () => {
   const validUser = {
     id: 'user-test-123',
     email: 'test@reachinbox.ai',
@@ -79,12 +79,30 @@ describe('Schedule API Validation & Auth (Requirement 1)', () => {
         body: 'World',
         recipients: ['valid@test.com'],
         startAt: futureIso,
-        delayMs: 500, // Below 2000ms
+        delayMs: 500,
         hourlyLimit: 100,
       });
 
     expect(res.status).toBe(400);
     expect(res.body.error.details.some((d: any) => d.field.includes('delayMs'))).toBe(true);
+  });
+
+  it('rejects non-integer delayMs and hourlyLimit with 400', async () => {
+    const res = await request(app)
+      .post('/api/emails/schedule')
+      .set('Cookie', authCookie)
+      .send({
+        subject: 'Hello',
+        body: 'World',
+        recipients: ['valid@test.com'],
+        startAt: futureIso,
+        delayMs: 2000.5,
+        hourlyLimit: 50.2,
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.details.some((d: any) => d.field.includes('delayMs'))).toBe(true);
+    expect(res.body.error.details.some((d: any) => d.field.includes('hourlyLimit'))).toBe(true);
   });
 
   it('rejects hourlyLimit exceeding MAX_EMAILS_PER_HOUR with 400', async () => {
@@ -97,7 +115,7 @@ describe('Schedule API Validation & Auth (Requirement 1)', () => {
         recipients: ['valid@test.com'],
         startAt: futureIso,
         delayMs: 2000,
-        hourlyLimit: 500, // Exceeds 200
+        hourlyLimit: 500,
       });
 
     expect(res.status).toBe(400);

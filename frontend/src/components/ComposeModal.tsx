@@ -97,7 +97,6 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({
         'success'
       );
 
-      // Reset form
       setSubject('');
       setBody('');
       setRecipients([]);
@@ -107,15 +106,16 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({
 
       onSuccess();
       onClose();
-    } catch (err: any) {
-      if (err.details && Array.isArray(err.details)) {
+    } catch (err: unknown) {
+      const error = err as { details?: Array<{ field: string; message: string }>; message?: string };
+      if (error.details && Array.isArray(error.details)) {
         const fieldErrors: Record<string, string> = {};
-        for (const item of err.details) {
+        for (const item of error.details) {
           fieldErrors[item.field] = item.message;
         }
         setErrors(fieldErrors);
       } else {
-        addToast(err.message || 'Failed to schedule emails', 'error');
+        addToast(error.message || 'Failed to schedule emails', 'error');
       }
     } finally {
       setIsSubmitting(false);
@@ -123,7 +123,7 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="relative bg-white rounded-md border border-slate-200 shadow-xl max-w-xl w-full p-6 text-left my-8">
         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
           <div>

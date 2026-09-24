@@ -30,13 +30,16 @@ export const scheduleEmailSchema = z.object({
   delayMs: z
     .coerce
     .number()
+    .int('delayMs must be an integer')
     .min(
       env.MIN_DELAY_BETWEEN_EMAILS_MS,
       `delayMs must be at least ${env.MIN_DELAY_BETWEEN_EMAILS_MS} ms`
-    ),
+    )
+    .max(86400000, 'delayMs cannot exceed 86400000 ms (24 hours)'),
   hourlyLimit: z
     .coerce
     .number()
+    .int('hourlyLimit must be an integer')
     .min(1, 'hourlyLimit must be at least 1')
     .max(
       env.MAX_EMAILS_PER_HOUR,
@@ -45,8 +48,8 @@ export const scheduleEmailSchema = z.object({
 });
 
 export const paginationQuerySchema = z.object({
-  limit: z.coerce.number().min(1).max(100).default(50),
-  offset: z.coerce.number().min(0).default(0),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
 });
 
 export type ScheduleEmailInput = z.infer<typeof scheduleEmailSchema>;

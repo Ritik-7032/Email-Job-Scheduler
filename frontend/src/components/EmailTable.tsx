@@ -1,7 +1,7 @@
 import React from 'react';
 import { EmailItem } from '../types/index.ts';
 import { formatDateToLocal } from '../lib/dateUtils.ts';
-import { ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ExternalLink, ChevronLeft, ChevronRight, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from './Button.tsx';
 import { EmptyState } from './EmptyState.tsx';
 
@@ -12,8 +12,10 @@ interface EmailTableProps {
   limit: number;
   offset: number;
   isLoading: boolean;
+  error?: string | null;
   onPageChange: (newOffset: number) => void;
   onComposeClick: () => void;
+  onRetry?: () => void;
 }
 
 export const EmailTable: React.FC<EmailTableProps> = ({
@@ -23,8 +25,10 @@ export const EmailTable: React.FC<EmailTableProps> = ({
   limit,
   offset,
   isLoading,
+  error,
   onPageChange,
   onComposeClick,
+  onRetry,
 }) => {
   const currentPage = Math.floor(offset / limit) + 1;
   const totalPages = Math.max(1, Math.ceil(total / limit));
@@ -65,6 +69,24 @@ export const EmailTable: React.FC<EmailTableProps> = ({
       <div className="w-full bg-white rounded-md border border-slate-200 p-8 flex flex-col items-center justify-center min-h-[300px]">
         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-slate-900 mb-2"></div>
         <p className="text-xs text-slate-500">Loading {type} emails...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="w-full bg-white rounded-md border border-rose-200 p-8 flex flex-col items-center justify-center text-center min-h-[300px]">
+        <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center mb-3">
+          <AlertCircle className="w-5 h-5 text-rose-600" />
+        </div>
+        <h3 className="text-sm font-semibold text-slate-800">Failed to load {type} emails</h3>
+        <p className="text-xs text-slate-500 max-w-sm mt-1 mb-4">{error}</p>
+        {onRetry && (
+          <Button size="sm" variant="outline" onClick={onRetry}>
+            <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+            Try Again
+          </Button>
+        )}
       </div>
     );
   }
@@ -160,7 +182,6 @@ export const EmailTable: React.FC<EmailTableProps> = ({
         </table>
       </div>
 
-      {/* Pagination Footer */}
       <div className="border-t border-slate-200 px-4 py-3 flex items-center justify-between bg-slate-50/50">
         <div className="text-xs text-slate-500">
           Showing <span className="font-medium text-slate-900">{offset + 1}</span> to{' '}

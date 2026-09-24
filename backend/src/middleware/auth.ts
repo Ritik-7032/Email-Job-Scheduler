@@ -7,11 +7,7 @@ export function requireAuth(
   res: Response,
   next: NextFunction
 ): void {
-  const token =
-    req.cookies?.token ||
-    (req.headers.authorization?.startsWith('Bearer ')
-      ? req.headers.authorization.slice(7)
-      : undefined);
+  const token = req.cookies?.token;
 
   if (!token) {
     res.status(401).json({

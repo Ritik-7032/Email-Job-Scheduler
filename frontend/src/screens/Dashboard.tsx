@@ -26,10 +26,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [scheduledEmails, setScheduledEmails] = useState<EmailItem[]>([]);
   const [scheduledTotal, setScheduledTotal] = useState(0);
   const [scheduledOffset, setScheduledOffset] = useState(0);
+  const [scheduledError, setScheduledError] = useState<string | null>(null);
 
   const [sentEmails, setSentEmails] = useState<EmailItem[]>([]);
   const [sentTotal, setSentTotal] = useState(0);
   const [sentOffset, setSentOffset] = useState(0);
+  const [sentError, setSentError] = useState<string | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
   const limit = 50;
@@ -37,12 +39,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const fetchScheduled = useCallback(
     async (offset: number) => {
       setIsLoading(true);
+      setScheduledError(null);
       try {
         const res = await api.getScheduledEmails(limit, offset);
         setScheduledEmails(res.items);
         setScheduledTotal(res.total);
-      } catch (err: any) {
-        addToast(err.message || 'Failed to load scheduled emails', 'error');
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Failed to load scheduled emails';
+        setScheduledError(message);
+        addToast(message, 'error');
       } finally {
         setIsLoading(false);
       }
@@ -53,12 +58,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const fetchSent = useCallback(
     async (offset: number) => {
       setIsLoading(true);
+      setSentError(null);
       try {
         const res = await api.getSentEmails(limit, offset);
         setSentEmails(res.items);
         setSentTotal(res.total);
-      } catch (err: any) {
-        addToast(err.message || 'Failed to load sent emails', 'error');
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Failed to load sent emails';
+        setSentError(message);
+        addToast(message, 'error');
       } finally {
         setIsLoading(false);
       }
@@ -93,22 +101,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <Header user={user} onLogout={onLogout} isLoggingOut={isLoggingOut} />
 
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 flex flex-col gap-5">
-        {/* Top Control Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          {/* Tabs */}
           <div className="flex items-center gap-1 bg-slate-200/70 p-1 rounded-md">
             <button
               onClick={() => setActiveTab('scheduled')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-all ${
                 activeTab === 'scheduled'
-                  ? 'bg-white text-slate-900 shadow-xs'
+                  ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <Calendar className="w-3.5 h-3.5" />
               <span>Scheduled Emails</span>
               {scheduledTotal > 0 && (
-                <span className="ml-1 px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-600 text-[10px] font-semibold">
+                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-semibold">
                   {scheduledTotal}
                 </span>
               )}
@@ -118,21 +124,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
               onClick={() => setActiveTab('sent')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-all ${
                 activeTab === 'sent'
-                  ? 'bg-white text-slate-900 shadow-xs'
+                  ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <Send className="w-3.5 h-3.5" />
               <span>Sent Emails</span>
               {sentTotal > 0 && (
-                <span className="ml-1 px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-600 text-[10px] font-semibold">
+                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-semibold">
                   {sentTotal}
                 </span>
               )}
             </button>
           </div>
 
-          {/* Action Buttons */}
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
@@ -156,7 +161,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
 
-        {/* Table Content */}
         {activeTab === 'scheduled' ? (
           <EmailTable
             type="scheduled"
@@ -165,8 +169,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
             limit={limit}
             offset={scheduledOffset}
             isLoading={isLoading}
+            error={scheduledError}
             onPageChange={(newOffset) => setScheduledOffset(newOffset)}
             onComposeClick={() => setIsComposeOpen(true)}
+            onRetry={() => fetchScheduled(scheduledOffset)}
           />
         ) : (
           <EmailTable
@@ -176,8 +182,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
             limit={limit}
             offset={sentOffset}
             isLoading={isLoading}
+            error={sentError}
             onPageChange={(newOffset) => setSentOffset(newOffset)}
             onComposeClick={() => setIsComposeOpen(true)}
+            onRetry={() => fetchSent(sentOffset)}
           />
         )}
       </main>

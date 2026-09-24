@@ -1,12 +1,12 @@
 # ReachInbox Email Job Scheduler
 
-A distributed, rate-limited email job scheduling system built with TypeScript, Express, BullMQ, Redis, PostgreSQL, Prisma, Nodemailer (Ethereal SMTP), and React.
+An email job scheduling system built with TypeScript, Express, BullMQ, Redis, PostgreSQL, Prisma, Nodemailer (Ethereal SMTP), and React.
 
 ---
 
-## 1. Overview & Architecture
+## Architecture Overview
 
-The system enables users to schedule email campaigns with per-sender minimum delay constraints and hourly rate limits. The API server and the background worker run as distinct, decoupled processes to allow independent scaling, graceful restarts, and zero-downtime queue persistence.
+The system schedules and sends email batches with per-sender minimum delays and hourly rate limits. The API server and background worker are separate processes.
 
 ```
 +-------------------------------------------------------------------------+
@@ -18,7 +18,7 @@ The system enables users to schedule email campaigns with per-sender minimum del
 +-------------------------------------------------------------------------+
 |                               Express API                               |
 |        - Google OAuth 2.0 (google-auth-library, HTTP-only JWT)          |
-|        - Zod Request Validation (bounds, future times, emails)          |
+|        - Zod Request Validation (bounds, integer checks, future times)  |
 |        - Staggered Database Ingestion (PostgreSQL via Prisma)           |
 |        - Bulk Delayed Job Enqueueing (BullMQ)                           |
 +-------------------+---------------------------------+-------------------+
@@ -29,7 +29,7 @@ The system enables users to schedule email campaigns with per-sender minimum del
 +-------------------+---------+     +-----------------+-------------------+
 |       PostgreSQL Database   |     |           Redis (AOF)               |
 |  - Users, Senders, Batches  |     |  - BullMQ Delayed Job Queue         |
-|  - Emails (Durable Truth)   |     |  - Atomic Lua Rate Limiter Keys     |
+|  - Emails (Durable Source)  |     |  - Atomic Lua Rate Limiter Keys     |
 +-------------------+---------+     +-----------------+-------------------+
                     ^                                 |
                     | Atomic Claims & State Updates   | Pull Delayed Jobs
@@ -39,7 +39,7 @@ The system enables users to schedule email campaigns with per-sender minimum del
 |        - BullMQ Delayed Job Consumer (Concurrency: 5)                   |
 |        - Redis Lua Gate: Min-Gap (`gap:ID`) & Hourly (`rate:ID:Window`) |
 |        - Atomic Claim: Raw SQL Conditional Transition                   |
-|        - Dispatch: Nodemailer SMTP with Ethereal Test Accounts          |
+|        - Dispatch: Nodemailer SMTP with Cached Senders                  |
 |        - Rescheduling: `moveToDelayed` + `DelayedError`                 |
 +------------------------------------+------------------------------------+
                                      |
@@ -52,22 +52,23 @@ The system enables users to schedule email campaigns with per-sender minimum del
 
 ---
 
-## 2. Tech Stack
+## Stack
 
-- **Backend**: Node.js, TypeScript, Express, BullMQ, ioredis, PostgreSQL, Prisma ORM, Nodemailer, Zod, google-auth-library, jsonwebtoken, Pino.
+- **Backend**: Node.js, TypeScript, Express, BullMQ, ioredis, PostgreSQL, Prisma, Nodemailer, Zod, google-auth-library, jsonwebtoken, Pino.
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Lucide icons.
 - **Testing**: Vitest, Supertest.
-- **Infrastructure**: Docker & Docker Compose (PostgreSQL 16, Redis 7 with AOF persistence).
+- **Infra**: Docker Compose (PostgreSQL 16, Redis 7 with AOF persistence).
 
 ---
 
-## 3. Project Structure
+## Folder Structure
 
 ```
-.
+reachinbox-scheduler/
 ├── backend/
 │   ├── prisma/
-│   │   └── schema.prisma         # Database models & indexes
+│   │   ├── migrations/           # SQL migration files
+│   │   └── schema.prisma         # Prisma models & indexes
 │   ├── src/
 │   │   ├── config/               # Zod-validated environment config
 │   │   ├── controllers/          # Auth & Email route handlers
@@ -107,7 +108,7 @@ The system enables users to schedule email campaigns with per-sender minimum del
 
 ---
 
-## 4. Environment Configuration
+## Environment Variables
 
 Copy `backend/.env.example` to `backend/.env`:
 
@@ -117,9 +118,9 @@ cp backend/.env.example backend/.env
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `NODE_ENV` | Runtime environment (`development` / `production` / `test`) | `development` |
+| `NODE_ENV` | Runtime environment (`development`, `production`, `test`) | `development` |
 | `PORT` | API server port | `5000` |
-| `FRONTEND_URL` | Frontend origin for CORS and cookie redirects | `http://localhost:5173` |
+| `FRONTEND_URL` | Frontend origin for CORS and redirects | `http://localhost:5173` |
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql://reachinbox:reachinbox_password@localhost:5432/reachinbox_scheduler?schema=public` |
 | `REDIS_URL` | Redis connection URL | `redis://localhost:6379` |
 | `GOOGLE_CLIENT_ID` | Google Cloud OAuth Client ID | Required |
@@ -131,7 +132,7 @@ cp backend/.env.example backend/.env
 | `SMTP_SECURE` | TLS flag | `false` |
 | `SENDER_COUNT` | Number of test sender accounts to seed | `5` |
 | `WORKER_CONCURRENCY` | Concurrent jobs per worker process | `5` |
-| `MIN_DELAY_BETWEEN_EMAILS_MS` | Minimum gap allowed between consecutive sends | `2000` |
+| `MIN_DELAY_BETWEEN_EMAILS_MS` | Minimum delay allowed between consecutive sends | `2000` |
 | `MAX_EMAILS_PER_HOUR` | Maximum allowed hourly limit per sender | `200` |
 | `DEFAULT_DELAY_MS` | Default delay in UI | `2000` |
 | `DEFAULT_HOURLY_LIMIT` | Default hourly limit in UI | `200` |
@@ -140,113 +141,123 @@ cp backend/.env.example backend/.env
 
 ---
 
-## 5. Google OAuth Setup
+## Google OAuth Setup
 
-1. Go to the [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
-2. Create an OAuth 2.0 Client ID for a **Web Application**.
-3. Set **Authorized redirect URIs** to:
+1. Open the [Google Cloud Console Credentials Page](https://console.cloud.google.com/apis/credentials).
+2. Create an OAuth 2.0 Client ID for a Web Application.
+3. Configure Authorized redirect URIs:
    `http://localhost:5000/api/auth/callback`
-4. Set **Authorized JavaScript origins** to:
+4. Configure Authorized JavaScript origins:
    `http://localhost:5173` and `http://localhost:5000`
-5. Copy the Client ID and Client Secret into `backend/.env`.
+5. Place the Client ID and Secret in `backend/.env`.
 
 ---
 
-## 6. Local Setup & Running
+## Ethereal Email Setup
 
-### Step 1: Start PostgreSQL and Redis via Docker
+Ethereal is a fake SMTP service used for development and testing. Outbound messages are captured by Ethereal rather than delivered to real inboxes.
+- Running `npm run seed:senders` in the backend uses `nodemailer.createTestAccount()` to generate `SENDER_COUNT` unique SMTP accounts and saves their credentials into the `Sender` table in PostgreSQL.
+- When an email is sent, the worker retrieves the Ethereal message URL via `nodemailer.getTestMessageUrl(info)` and writes it to the `previewUrl` column in the database.
+- The sent table in the frontend displays a direct preview link to view the rendered email.
 
+---
+
+## Setup & Running Instructions
+
+### 1. Start Database & Redis
 ```bash
 docker-compose up -d
 ```
 
-### Step 2: Install dependencies & run Prisma migrations
-
+### 2. Run Database Migrations & Seed Senders
 ```bash
-# In backend
 cd backend
 npm install
-npx prisma db push
-```
-
-### Step 3: Seed Ethereal SMTP Senders
-
-```bash
+npx prisma migrate dev
 npm run seed:senders
 ```
-*This calls `nodemailer.createTestAccount()` to generate `SENDER_COUNT` accounts and stores their credentials in the PostgreSQL `Sender` table.*
 
-### Step 4: Install Frontend dependencies
-
+### 3. Install Frontend Dependencies
 ```bash
 cd ../frontend
 npm install
 ```
 
-### Step 5: Run the Services
+### 4. Start the Application
 
-Open three terminal windows:
+Run the three processes in separate terminal tabs:
 
-**Terminal 1 — API Server:**
-```bash
-npm run dev
-# or from root: npm run dev
-```
-
-**Terminal 2 — Background Worker:**
-```bash
-npm run worker
-# or from root: npm run worker
-```
-
-**Terminal 3 — Frontend Dashboard:**
-```bash
-npm run client
-# or from root: npm run client
-```
+- **API Server**:
+  ```bash
+  npm run dev
+  # or from root: npm run dev
+  ```
+- **Background Worker**:
+  ```bash
+  npm run worker
+  # or from root: npm run worker
+  ```
+- **Frontend Client**:
+  ```bash
+  npm run client
+  # or from root: npm run client
+  ```
 
 Access the dashboard at `http://localhost:5173`.
 
 ---
 
-## 7. Database Schema & Indexes
+## API Endpoints
 
-- **User**: `id`, `googleId` (unique), `name`, `email` (unique), `avatar`, `createdAt`, `updatedAt`
-- **Sender**: `id`, `email`, `smtpUser`, `smtpPassword`, `createdAt`
-- **Batch**: `id`, `userId`, `delayMs`, `hourlyLimit`, `startAt`, `createdAt`
-- **Email**: `id` (UUID), `userId`, `batchId`, `senderId`, `recipient`, `subject`, `body`, `scheduledAt`, `sentAt`, `status` (`scheduled` | `processing` | `sent` | `failed`), `attempts`, `errorMessage`, `messageId`, `previewUrl`, `enqueuedAt`, `processingStartedAt`, `createdAt`, `updatedAt`
-
-**Indexes:**
-- `(userId, status, scheduledAt)`: Enables fast queries for scheduled and active items.
-- `(userId, status, sentAt)`: Enables fast sorted pagination for sent and failed history.
-- `batchId`: Foreign key index for cascade lookups.
+| Method | Endpoint | Description | Auth Required | Body / Query |
+| :--- | :--- | :--- | :--- | :--- |
+| `GET` | `/health` | Health check endpoint | No | None |
+| `GET` | `/api/auth/google` | Initiates Google OAuth with state cookie | No | None |
+| `GET` | `/api/auth/callback` | Exchanges code, verifies state, sets JWT cookie | No | Query: `code`, `state` |
+| `GET` | `/api/auth/me` | Returns current authenticated user profile | Yes | None |
+| `POST` | `/api/auth/logout` | Clears JWT cookie | Yes | None |
+| `POST` | `/api/emails/schedule` | Schedules a new email batch | Yes | Body: `{ subject, body, recipients, startAt, delayMs, hourlyLimit }` |
+| `GET` | `/api/emails/scheduled` | Returns scheduled and processing emails | Yes | Query: `limit`, `offset` |
+| `GET` | `/api/emails/sent` | Returns sent and failed emails | Yes | Query: `limit`, `offset` |
 
 ---
 
-## 8. Scheduling Flow & Execution Details
+## Scheduling Flow & Rate Limiting Mechanics
 
-### 1. Ingestion (`POST /api/emails/schedule`)
-- Validates request payload against Zod bounds: non-empty subject and body, RFC-valid emails, future start time, `delayMs >= MIN_DELAY_BETWEEN_EMAILS_MS`, and `hourlyLimit <= MAX_EMAILS_PER_HOUR`.
-- Staggers schedule time: for $i = 0 \dots N-1$, `scheduledAt = startAt + i * delayMs`. Senders are assigned round-robin across seeded senders in the DB.
-- Inserts `Batch` and all `Email` rows within a single PostgreSQL transaction.
-- Adds jobs to BullMQ in bulk using `queue.addBulk()` with `jobId = email.id` and `delay = max(0, scheduledAt - now)`.
-- Updates `enqueuedAt = now()` for all rows.
+### 1. Ingestion & Staggering
+1. `POST /api/emails/schedule` validates input with Zod (`delayMs >= 2000`, `hourlyLimit <= 200`, valid future ISO `startAt`, max 1000 recipients).
+2. Within a single PostgreSQL transaction:
+   - Creates a `Batch` record.
+   - Computes staggered `scheduledAt = startAt + index * delayMs` for each recipient.
+   - Assigns senders round-robin across active senders in the database.
+   - Bulk inserts all `Email` records (`createMany`).
+3. Enqueues jobs to BullMQ via `queue.addBulk()` with `jobId = email.id` and `delay = max(0, scheduledAt - now)`.
+4. Marks `enqueuedAt = now` in PostgreSQL and returns `{ batchId, count }`.
 
-### 2. Rate Limiting & Gap Control (Atomic Lua Script)
-Before sending, each worker evaluates sender gates using an atomic Redis Lua script:
-- **Minimum Gap Key (`gap:{senderId}`)**: Checks remaining TTL (`PTTL`). If positive, returns remaining milliseconds.
-- **Hourly Window Counter (`rate:{senderId}:{YYYYMMDDHH}`)**: Checks current sent count against `hourlyLimit`. If reached, returns milliseconds until the next UTC hour window.
-- **Slot Reservation**: If both checks pass, increments the hourly counter (with a 2-hour TTL) and sets the gap key (`PSETEX gap:{senderId} delayMs 1`). Returns `0`.
+### 2. Redis Lua Rate Limiter & Minimum Delay Gate
+Before dispatching an email, the worker runs an atomic Lua script evaluating two gates for the assigned sender:
+- **Minimum Gap Key (`gap:{senderId}`)**: Checks remaining TTL (`PTTL`). If positive, returns the remaining milliseconds to wait.
+- **Hourly Window Counter (`rate:{senderId}:{YYYYMMDDHH}`)**: Checks current sent count against the batch's `hourlyLimit`. If the quota is exhausted, returns milliseconds remaining until the start of the next UTC hour.
+- **Atomic Reservation**: If both checks pass, increments the counter (sets a 2-hour TTL on initial creation) and sets the gap key with millisecond TTL (`PSETEX gap:{senderId} delayMs 1`). Returns `0`.
 
-### 3. Worker Rescheduling
-If the Lua script returns a wait time $> 0$:
-- The worker logs the rate limit reschedule.
-- Calls `job.moveToDelayed(Date.now() + waitMs, token)`.
-- Throws `new DelayedError()` from BullMQ.
-- The email in PostgreSQL remains `scheduled` without counting as a failed attempt.
+### 3. Rescheduling via `moveToDelayed` and `DelayedError`
+When the Lua script returns a wait time $> 0$:
+1. The worker logs the reschedule event.
+2. Calls `job.moveToDelayed(Date.now() + waitMs, token)`.
+3. Throws `new DelayedError()` from BullMQ.
+4. The job moves back into delayed state without incrementing the retry attempt counter, and the database status remains `scheduled`.
 
-### 4. Atomic Claim Query
-To prevent double sends across concurrent workers:
+### 4. Hourly Limit Semantics Across Multiple Senders
+- Hourly counters are keyed per sender in Redis (`rate:{senderId}:{utcHourWindow}`).
+- If a batch specifies an `hourlyLimit` of 200 across 5 seeded senders in round-robin, each sender will send up to 200 emails per hour, yielding an effective aggregate throughput of up to 1,000 emails per hour.
+- Multiple batches sharing the same sender pool draw from the same per-sender hourly quota.
+
+---
+
+## Concurrency, Idempotency & Crash Recovery
+
+### Atomic SQL Claim Query
+To prevent duplicate sends across concurrent workers:
 ```sql
 UPDATE "Email"
 SET "status" = 'processing', "processingStartedAt" = $now, "updatedAt" = $now
@@ -256,74 +267,83 @@ WHERE "id" = $id
     OR ("status" = 'processing' AND "processingStartedAt" < $now - INTERVAL '5 minutes')
   )
 ```
-If 0 rows are affected, another worker has already claimed the record or it is no longer schedulable, and the job terminates safely.
+- If 0 rows are affected, the email has either already been claimed by another worker or already sent. The worker releases the reserved hourly slot and inspects the row: if it is currently in `processing` due to a recent crash (< 5 minutes ago), it delays the job until `processingStartedAt + STALE_PROCESSING_MS + 1000` to ensure recovery when stale.
 
-### 5. SMTP Dispatch & Failure Handling
-- Dispatches email through the assigned sender's Nodemailer transporter.
-- On success: sets `status = 'sent'`, records `sentAt`, `messageId`, and `previewUrl` from Ethereal.
-- On error: decrements the hourly counter (`releaseHourlySlot`), updates `attempts`, and rethrows if retries remain for exponential backoff (base 5s). On final attempt exhaustion, marks `status = 'failed'`.
+### SMTP Dispatch and Status Persistence
+- The SMTP send and the database `status = 'sent'` update are handled in separate stages.
+- If SMTP send fails: the reserved hourly slot is decremented, attempts are incremented, and if retry attempts remain, status is set to `scheduled` and the error is rethrown for BullMQ exponential backoff.
+- If SMTP send succeeds: the status update to `sent` is retried with backoff to prevent duplicate dispatches if the database experiences transient contention.
 
----
-
-## 9. Failure Modes, Restart Persistence & Trade-offs
-
-### Restart Persistence
-- Redis is configured with `appendonly yes` (AOF) and backed by a Docker named volume.
-- Delayed BullMQ jobs survive worker and Redis restarts without manual re-insertion.
-
-### Enqueue-Failure Window & Reconciliation
-- If the API crashes after database insert but before queue enqueueing, `enqueuedAt` remains `NULL`.
-- On server startup and via `npm run requeue`, the system queries only rows where `status = 'scheduled' AND enqueuedAt IS NULL AND createdAt < (now - 1 minute)` and enqueues them idempotently using their stable UUID `jobId`.
-
-### Duplicate Delivery vs Exactly-Once Trade-off
-- Database state and atomic conditional updates prevent normal duplicate processing across concurrent workers.
-- If a catastrophic network partition or worker crash occurs **after** the SMTP server accepts the message but **before** the database status is updated to `sent`, the job may be retried and result in a duplicate send. Achieving true exactly-once delivery requires recipient/provider-level idempotency key support.
-- A job stuck in `processing` due to an abrupt worker termination is automatically reclaimed after `STALE_PROCESSING_MS` (5 minutes), reflecting the same trade-off.
+### Enqueue Failure Window
+- If the API server crashes after inserting database rows but before BullMQ enqueueing finishes, the rows remain with `enqueuedAt = null`.
+- On API startup and via `npm run requeue`, the system queries rows where `status = 'scheduled' AND enqueuedAt IS NULL AND createdAt < (now - 1 minute)` and enqueues them using their stable UUID `jobId`.
 
 ---
 
-## 10. Verification & Test Suite
+## Handling 1000+ Emails
 
-Run the Vitest test suite in the backend:
-
-```bash
-cd backend
-npm test
-```
-
-The test suite covers:
-1. **Schedule API Validation**: bad email, past start timestamp, delay below minimum, limit above maximum, unauthenticated requests.
-2. **Batch Ingestion & Staggering**: correct `scheduledAt` offsets and round-robin sender assignment.
-3. **Queue Enqueueing**: job creation with `jobId = email.id` and correct delayed timestamp calculation.
-4. **Rate Limiter Lua Script**: atomic gap verification, hourly quota gating, wait duration to next UTC hour, and slot rollback.
-5. **Worker Rescheduling**: `moveToDelayed` and `DelayedError` invocation when rate-limited without burning retry attempts.
-6. **Idempotency & Concurrency**: skipping already resolved emails and atomic raw SQL claim fencing.
-7. **Worker Lifecycle**: success path with preview URLs and retry/failure paths with slot release.
+The system handles large recipient lists without blocking the API:
+1. **Request Payload**: Express JSON body size is configured for 2MB, accommodating lists up to 1,000 recipients.
+2. **Database Ingestion**: Uses a single `prisma.batch.create` and `prisma.email.createMany` inside a single transaction rather than individual row queries.
+3. **Queue Enqueueing**: Uses `queue.addBulk(jobs)` in a single Redis round-trip instead of iterative `add()` calls.
+4. **Worker Throughput**: The worker processes jobs concurrently (`WORKER_CONCURRENCY = 5`), staggering load across multiple Ethereal senders.
 
 ---
 
-## 11. Feature Checklist
+## Assumptions and Shortcuts
 
-### Backend Requirements
-- [x] Separate API and Worker entrypoints (`src/server.ts`, `src/worker.ts`).
-- [x] No cron libraries, no `setInterval` scheduling, no in-memory rate limiting.
-- [x] Real Google OAuth 2.0 with state verification and HTTP-only signed JWT cookies.
-- [x] Senders dynamically seeded into PostgreSQL via `nodemailer.createTestAccount()`.
-- [x] Zod validation for all bounds and rejection with 400.
-- [x] Database transactions for batch creation and round-robin sender assignment.
+1. **Google OAuth**: A single verified Google account creates or logs into a user account.
+2. **Ethereal Test Senders**: Test accounts are generated dynamically on startup/seeding rather than using production SMTP credentials.
+3. **UTC Hourly Windows**: Hourly limits reset at the start of each UTC hour (e.g. `14:00:00 UTC`), rather than on a rolling 60-minute sliding window.
+4. **Exactly-Once Delivery Boundary**: Database claims prevent duplicate processing under normal operation. If a crash occurs after SMTP accepts a message but before the database records `sent`, a duplicate could occur on recovery. True exactly-once delivery requires provider-level idempotency key support.
+
+---
+
+## Demo & Verification Steps
+
+### 1. Normal Scheduling Flow
+1. Start the API, Worker, and Frontend (`docker-compose up -d`, `npm run dev`, `npm run worker`, `npm run client`).
+2. Log in with Google at `http://localhost:5173`.
+3. Open **Compose New Email**, upload a sample CSV with 10 recipient emails, set delay to 2000ms, and click **Schedule Campaign**.
+4. Observe the emails appear in the **Scheduled Emails** tab and progressively move to **Sent Emails** with valid Ethereal preview URLs.
+
+### 2. Worker Restart Persistence Test
+1. Schedule 10 emails with a start time 2 minutes in the future.
+2. Stop the worker process (`Ctrl+C` in the worker terminal).
+3. Confirm in the frontend that the emails remain in `Scheduled Emails`.
+4. Restart the worker (`npm run worker`).
+5. Verify that the delayed jobs fire at their scheduled time and complete delivery without losing state.
+
+### 3. Rate Limit Rescheduling Test
+1. Schedule 20 emails with an hourly limit of 5 and delay of 2000ms.
+2. Observe the worker logs: after sending 5 emails, the worker logs `Job rescheduled by rate limit` and delays the remaining jobs until the start of the next UTC hour window.
+3. Confirm in the database and dashboard that the remaining emails remain in `scheduled` status without burning retry attempts.
+
+---
+
+## Feature Checklist
+
+### Backend
+- [x] Separate API and Worker processes (`src/server.ts` and `src/worker.ts`).
+- [x] Pure BullMQ delayed job scheduling (no cron, no `setInterval`, no in-memory schedulers).
+- [x] Real Google OAuth 2.0 with state validation and HTTP-only signed JWT cookie.
+- [x] Multiple Ethereal sender accounts seeded via `nodemailer.createTestAccount()`.
+- [x] Zod validation for request bounds and integer enforcement.
+- [x] Single-transaction batch creation and round-robin sender assignment.
 - [x] Atomic Redis Lua script combining minimum delay gap and UTC hourly limit.
-- [x] Worker rescheduling with BullMQ `moveToDelayed` and `DelayedError`.
-- [x] Atomic SQL claim preventing race conditions across concurrent workers.
-- [x] Structured Pino logger for key lifecycle events.
+- [x] BullMQ `moveToDelayed` and `DelayedError` rescheduling.
+- [x] Atomic SQL update claim query preventing duplicate worker processing.
+- [x] Stalled job recovery handling with delay until stale timeout.
+- [x] Structured Pino logger for server, worker, dispatch, failure, and rate-limit events.
 - [x] Automatic startup reconciler and standalone `requeue` script.
 
-### Frontend Requirements
-- [x] Internal-tool design with neutral slate palette and 1px borders.
+### Frontend
+- [x] Internal-tool UI design with neutral slate palette and 1px borders.
 - [x] Google Sign-in authentication flow.
-- [x] Dashboard with "Scheduled Emails" and "Sent Emails" tabs.
-- [x] Real API-driven tables with pagination, loading, error, and empty states.
-- [x] Ethereal preview URLs for sent test emails.
-- [x] Compose modal with subject, body, start time, delay, and hourly limit.
-- [x] Hand-written CSV/TXT parser with email regex and deduplication counts.
-- [x] Times formatted in the user's local timezone.
-- [x] Centralized typed API client (`frontend/src/lib/api.ts`).
+- [x] Dashboard with Scheduled Emails and Sent Emails tabs.
+- [x] Real API-driven paginated tables with loading, error, and empty states.
+- [x] Direct Ethereal preview links for sent emails.
+- [x] Compose modal with input validation, datetime-local conversion to UTC ISO, and delay/hourly controls.
+- [x] Hand-written CSV/text parser with email regex and deduplication counts.
+- [x] Formatted timestamps in user's local timezone.
+- [x] Typed API client (`frontend/src/lib/api.ts`).
