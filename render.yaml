@@ -4,7 +4,7 @@ services:
     name: reachinbox-scheduler-backend
     env: node
     rootDir: backend
-    buildCommand: npm install && npm run build && npx prisma db push
+    buildCommand: npm install && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV
@@ -14,9 +14,7 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: REDIS_URL
-        fromRedis:
-          name: reachinbox-redis
-          property: connectionString
+        sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
@@ -39,18 +37,10 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: REDIS_URL
-        fromRedis:
-          name: reachinbox-redis
-          property: connectionString
+        sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: JWT_SECRET
         sync: false
-
-# 3. Redis Instance for BullMQ Rate Limiter
-redis:
-  - name: reachinbox-redis
-    ipAllowList: []
-    plan: free
