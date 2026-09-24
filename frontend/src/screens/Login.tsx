@@ -1,6 +1,8 @@
 import React from 'react';
 
 export const Login: React.FC = () => {
+  const authUrl = `${import.meta.env.VITE_API_URL || ''}/api/auth/google`;
+
   return (
     <div className="min-h-screen bg-white flex flex-col justify-center items-center px-4">
       <div className="max-w-[440px] w-full bg-white rounded-2xl border border-slate-200/80 shadow-[0_4px_24px_rgba(0,0,0,0.04)] p-8 sm:p-10 text-center">
@@ -9,7 +11,7 @@ export const Login: React.FC = () => {
         </h1>
 
         <a
-          href="/api/auth/google"
+          href={authUrl}
           className="w-full flex items-center justify-center gap-3 bg-[#e8f5e9] hover:bg-[#def0e0] text-slate-800 font-medium text-sm py-3 px-4 rounded-xl transition-all shadow-sm"
         >
           <svg className="w-4 h-4" viewBox="0 0 24 24">
@@ -48,7 +50,7 @@ export const Login: React.FC = () => {
           onSubmit={(e) => {
             e.preventDefault();
             // Google OAuth is the primary authentication method
-            window.location.href = '/api/auth/google';
+            window.location.href = authUrl;
           }}
           className="flex flex-col gap-3.5"
         >

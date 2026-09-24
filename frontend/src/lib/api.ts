@@ -7,11 +7,14 @@ import {
   ApiError,
 } from '../types/index.ts';
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+
 class ApiClient {
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
+    const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
     const config: RequestInit = {
       ...options,
       credentials: 'include',
@@ -21,7 +24,7 @@ class ApiClient {
       },
     };
 
-    const res = await fetch(endpoint, config);
+    const res = await fetch(url, config);
 
     if (!res.ok) {
       let errorData: { error?: ApiError } | null = null;
