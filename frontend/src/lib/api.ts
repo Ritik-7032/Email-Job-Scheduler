@@ -71,6 +71,13 @@ class ApiClient {
     return this.request<User>('/api/auth/me', { timeoutMs: 5000 });
   }
 
+  async loginWithEmail(email?: string): Promise<User> {
+    return this.request<User>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
   async logout(): Promise<{ success: boolean; message: string }> {
     return this.request<{ success: boolean; message: string }>(
       '/api/auth/logout',

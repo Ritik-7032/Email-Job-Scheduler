@@ -1,7 +1,32 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { api } from '../lib/api.ts';
+import { User } from '../types/index.ts';
 
-export const Login: React.FC = () => {
+interface LoginProps {
+  onLoginSuccess?: (user: User) => void;
+}
+
+export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
+  const [emailInput, setEmailInput] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const authUrl = `${import.meta.env.VITE_API_URL || ''}/api/auth/google`;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    try {
+      const user = await api.loginWithEmail(emailInput || undefined);
+      if (onLoginSuccess) {
+        onLoginSuccess(user);
+      } else {
+        window.location.reload();
+      }
+    } catch {
+      window.location.href = authUrl;
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-white flex flex-col justify-center items-center px-4">
@@ -46,16 +71,11 @@ export const Login: React.FC = () => {
           </div>
         </div>
 
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            // Google OAuth is the primary authentication method
-            window.location.href = authUrl;
-          }}
-          className="flex flex-col gap-3.5"
-        >
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
           <input
             type="email"
+            value={emailInput}
+            onChange={(e) => setEmailInput(e.target.value)}
             placeholder="Email ID"
             className="w-full bg-[#f4f6f5] border-none rounded-xl px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#00a843] transition-all"
           />
@@ -68,9 +88,10 @@ export const Login: React.FC = () => {
 
           <button
             type="submit"
-            className="w-full mt-2 bg-[#00a843] hover:bg-[#00923a] text-white font-medium py-3 rounded-xl transition-all shadow-sm text-sm tracking-wide"
+            disabled={isSubmitting}
+            className="w-full mt-2 bg-[#00a843] hover:bg-[#00923a] text-white font-medium py-3 rounded-xl transition-all shadow-sm text-sm tracking-wide disabled:opacity-50"
           >
-            Login
+            {isSubmitting ? 'Logging in...' : 'Login'}
           </button>
         </form>
       </div>

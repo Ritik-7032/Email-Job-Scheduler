@@ -50,7 +50,7 @@ export const AppContent: React.FC = () => {
   }
 
   if (!user) {
-    return <Login />;
+    return <Login onLoginSuccess={(u) => setUser(u)} />;
   }
 
   return (
