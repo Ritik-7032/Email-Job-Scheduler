@@ -4,7 +4,12 @@ import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
 import { runStartupRecovery } from './services/requeueService.js';
 
+import { createEmailWorker } from './workers/emailWorker.js';
+
 async function bootstrap() {
+  const worker = createEmailWorker();
+  logger.info({ concurrency: env.WORKER_CONCURRENCY }, 'Background queue worker running in server process');
+
   const server = app.listen(env.PORT, () => {
     logger.info({ port: env.PORT, nodeEnv: env.NODE_ENV }, `Server running at http://localhost:${env.PORT}`);
   });

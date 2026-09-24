@@ -1,5 +1,5 @@
 services:
-  # 1. Backend Web Service API
+  # Single Free Web Service (Runs API + Queue Worker combined)
   - type: web
     name: reachinbox-scheduler-backend
     env: node
@@ -24,40 +24,3 @@ services:
         value: https://reachinbox-scheduler-backend.onrender.com/api/auth/callback
       - key: JWT_SECRET
         generateValue: true
-
-  # 2. Email Worker Background Queue Service (Inherits env vars automatically)
-  - type: worker
-    name: reachinbox-scheduler-worker
-    env: node
-    plan: free
-    rootDir: backend
-    buildCommand: npm install && npm run build
-    startCommand: npm run start:worker
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: DATABASE_URL
-        fromService:
-          type: web
-          name: reachinbox-scheduler-backend
-          envVarKey: DATABASE_URL
-      - key: REDIS_URL
-        fromService:
-          type: web
-          name: reachinbox-scheduler-backend
-          envVarKey: REDIS_URL
-      - key: GOOGLE_CLIENT_ID
-        fromService:
-          type: web
-          name: reachinbox-scheduler-backend
-          envVarKey: GOOGLE_CLIENT_ID
-      - key: GOOGLE_CLIENT_SECRET
-        fromService:
-          type: web
-          name: reachinbox-scheduler-backend
-          envVarKey: GOOGLE_CLIENT_SECRET
-      - key: JWT_SECRET
-        fromService:
-          type: web
-          name: reachinbox-scheduler-backend
-          envVarKey: JWT_SECRET
