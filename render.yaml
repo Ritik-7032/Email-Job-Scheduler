@@ -1,8 +1,9 @@
 services:
-  # 1. Backend Web Service API
+  # 1. Backend Web Service API (Free Tier)
   - type: web
     name: reachinbox-scheduler-backend
     env: node
+    plan: free
     rootDir: backend
     buildCommand: npm install && npm run build
     startCommand: npm start
@@ -24,10 +25,11 @@ services:
       - key: JWT_SECRET
         generateValue: true
 
-  # 2. Email Worker Background Queue Service
+  # 2. Email Worker Background Queue Service (Free Tier)
   - type: worker
     name: reachinbox-scheduler-worker
     env: node
+    plan: free
     rootDir: backend
     buildCommand: npm install && npm run build
     startCommand: npm run start:worker
