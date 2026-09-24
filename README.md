@@ -55,9 +55,54 @@ The system schedules and sends email batches with per-sender minimum delays and 
 ## Stack
 
 - **Backend**: Node.js, TypeScript, Express, BullMQ, ioredis, PostgreSQL, Prisma, Nodemailer, Zod, google-auth-library, jsonwebtoken, Pino.
-- **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Lucide icons.
-- **Testing**: Vitest, Supertest.
-- **Infra**: Docker Compose (PostgreSQL 16, Redis 7 with AOF persistence).
+- **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Lucide icons, Nginx.
+- **Testing**: Vitest, Supertest (30/30 Unit Tests).
+- **Infra**: Docker Compose (Full-stack containerization with isolated network & persistent volumes).
+
+---
+
+## 🚀 1-Command Docker Quickstart (For Sharing & Evaluation)
+
+You can run the **entire full-stack application** with a single command:
+
+```bash
+docker-compose up --build
+```
+
+**What this launches automatically:**
+- **PostgreSQL 16** (`reachinbox-postgres`) on port `5432` with automated schema push.
+- **Redis 7** (`reachinbox-redis`) on port `6379` with AOF persistence.
+- **Backend API Server** (`reachinbox-api`) on port `5000` with auto-seeded Ethereal test senders.
+- **BullMQ Background Worker** (`reachinbox-worker`) processing scheduled email jobs.
+- **React Frontend UI** (`reachinbox-frontend`) served via Nginx on **[http://localhost:5173](http://localhost:5173)**.
+
+To stop the containers:
+```bash
+docker-compose down
+```
+
+---
+
+## 💻 Local Development Setup (Without Docker)
+
+If you prefer to run services individually in separate terminals:
+
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Seed Ethereal sender accounts in database (first time)
+npm --prefix backend run seed:senders
+
+# 3. Start Backend API (Terminal 1)
+npm run dev
+
+# 4. Start BullMQ Worker (Terminal 2)
+npm run worker
+
+# 5. Start React Frontend (Terminal 3)
+npm run client
+```
 
 ---
 

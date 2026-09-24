@@ -11,7 +11,7 @@ export const scheduleEmailSchema = z.object({
     .string()
     .trim()
     .min(1, 'Body is required')
-    .max(20000, 'Body must be 20000 characters or less'),
+    .max(25000000, 'Body must be 25MB or less'),
   recipients: z
     .array(z.string().trim().email('Invalid email address'))
     .min(1, 'At least one recipient is required')
@@ -24,8 +24,8 @@ export const scheduleEmailSchema = z.object({
     .string()
     .datetime({ offset: true })
     .refine(
-      (val) => new Date(val).getTime() > Date.now(),
-      'startAt must be a valid future timestamp'
+      (val) => !isNaN(new Date(val).getTime()) && new Date(val).getTime() > Date.now() - 60000,
+      'Schedule time cannot be in the past. Please choose a future time.'
     ),
   delayMs: z
     .coerce

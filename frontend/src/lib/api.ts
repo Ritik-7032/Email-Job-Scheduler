@@ -31,9 +31,13 @@ class ApiClient {
         // Fallback for non-JSON error bodies
       }
 
-      const message =
+      let message =
         errorData?.error?.message ||
         `Request failed with status ${res.status}: ${res.statusText}`;
+
+      if (errorData?.error?.details && errorData.error.details.length > 0) {
+        message = errorData.error.details.map((d) => d.message).join('. ');
+      }
 
       const error: Error & {
         details?: Array<{ field: string; message: string }>;

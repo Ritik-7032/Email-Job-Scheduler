@@ -16,6 +16,24 @@ export function formatDateToLocal(dateStr: string | null | undefined): string {
   }
 }
 
+export function formatScheduledTimePill(dateStr: string | null | undefined): string {
+  if (!dateStr) return '-';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '-';
+    const weekday = new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(d);
+    const time = new Intl.DateTimeFormat(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    }).format(d);
+    return `${weekday} ${time}`;
+  } catch {
+    return dateStr;
+  }
+}
+
 export function getDefaultStartTimeLocal(): string {
   // Default start time: current time + 5 minutes, formatted for datetime-local
   const now = new Date(Date.now() + 5 * 60 * 1000);
@@ -31,3 +49,4 @@ export function localDatetimeToUtcIso(localDatetimeStr: string): string {
   const d = new Date(localDatetimeStr);
   return d.toISOString();
 }
+

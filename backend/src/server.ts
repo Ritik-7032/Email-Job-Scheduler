@@ -5,22 +5,23 @@ import { prisma } from './lib/prisma.js';
 import { runStartupRecovery } from './services/requeueService.js';
 
 async function bootstrap() {
-  // Reconcile stale processing records and requeue orphaned scheduled emails on server startup
-  try {
-    const { staleRecovered, orphanedRequeued } = await runStartupRecovery();
-    if (staleRecovered > 0 || orphanedRequeued > 0) {
-      logger.info(
-        { staleRecovered, orphanedRequeued },
-        'Completed startup recovery reconciling stale and orphaned email jobs'
-      );
-    }
-  } catch (err) {
-    logger.warn({ err }, 'Could not run startup recovery check');
-  }
-
   const server = app.listen(env.PORT, () => {
-    logger.info({ port: env.PORT, nodeEnv: env.NODE_ENV }, 'Server started');
+    logger.info({ port: env.PORT, nodeEnv: env.NODE_ENV }, `Server running at http://localhost:${env.PORT}`);
   });
+
+  // Reconcile stale processing records and requeue orphaned scheduled emails in the background
+  runStartupRecovery()
+    .then(({ staleRecovered, orphanedRequeued }) => {
+      if (staleRecovered > 0 || orphanedRequeued > 0) {
+        logger.info(
+          { staleRecovered, orphanedRequeued },
+          'Completed startup recovery reconciling stale and orphaned email jobs'
+        );
+      }
+    })
+    .catch((err) => {
+      logger.warn({ err }, 'Non-fatal: Startup recovery check deferred');
+    });
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Server shutting down gracefully...');

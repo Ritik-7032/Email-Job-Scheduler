@@ -7,6 +7,8 @@ export const EMAIL_QUEUE_NAME = 'email-queue';
 export const emailQueue = new Queue<ScheduleJobData>(EMAIL_QUEUE_NAME, {
   connection: {
     url: env.REDIS_URL,
+    connectTimeout: 5000,
+    maxRetriesPerRequest: null,
   },
   defaultJobOptions: {
     attempts: 3,

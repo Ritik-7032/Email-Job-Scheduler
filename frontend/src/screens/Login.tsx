@@ -2,21 +2,15 @@ import React from 'react';
 
 export const Login: React.FC = () => {
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center px-4">
-      <div className="max-w-md w-full bg-white rounded-md border border-slate-200 shadow-sm p-8 text-center">
-        <div className="w-10 h-10 bg-slate-900 text-white rounded flex items-center justify-center font-bold text-sm mx-auto mb-4">
-          RI
-        </div>
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-          ReachInbox Job Scheduler
+    <div className="min-h-screen bg-white flex flex-col justify-center items-center px-4">
+      <div className="max-w-[440px] w-full bg-white rounded-2xl border border-slate-200/80 shadow-[0_4px_24px_rgba(0,0,0,0.04)] p-8 sm:p-10 text-center">
+        <h1 className="text-3xl font-bold text-slate-900 tracking-tight mb-8">
+          Login
         </h1>
-        <p className="text-xs text-slate-500 mt-1 mb-6">
-          Delayed job orchestration and rate-limited email delivery engine.
-        </p>
 
         <a
           href="/api/auth/google"
-          className="w-full flex items-center justify-center gap-3 bg-white hover:bg-slate-50 text-slate-800 font-medium text-sm py-2.5 px-4 rounded-md border border-slate-300 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-1"
+          className="w-full flex items-center justify-center gap-3 bg-[#e8f5e9] hover:bg-[#def0e0] text-slate-800 font-medium text-sm py-3 px-4 rounded-xl transition-all shadow-sm"
         >
           <svg className="w-4 h-4" viewBox="0 0 24 24">
             <path
@@ -36,12 +30,47 @@ export const Login: React.FC = () => {
               d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
             />
           </svg>
-          Sign in with Google
+          <span className="font-medium text-slate-800 text-sm">Login with Google</span>
         </a>
 
-        <div className="mt-6 pt-4 border-t border-slate-100 text-[11px] text-slate-400">
-          ReachInbox.ai Engineering Intern Assignment
+        <div className="relative my-6">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-slate-200/80"></div>
+          </div>
+          <div className="relative flex justify-center text-xs">
+            <span className="bg-white px-3 text-slate-400 font-normal">
+              or sign up through email
+            </span>
+          </div>
         </div>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            // Google OAuth is the primary authentication method
+            window.location.href = '/api/auth/google';
+          }}
+          className="flex flex-col gap-3.5"
+        >
+          <input
+            type="email"
+            placeholder="Email ID"
+            className="w-full bg-[#f4f6f5] border-none rounded-xl px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#00a843] transition-all"
+          />
+
+          <input
+            type="password"
+            placeholder="Password"
+            className="w-full bg-[#f4f6f5] border-none rounded-xl px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#00a843] transition-all"
+          />
+
+          <button
+            type="submit"
+            className="w-full mt-2 bg-[#00a843] hover:bg-[#00923a] text-white font-medium py-3 rounded-xl transition-all shadow-sm text-sm tracking-wide"
+          >
+            Login
+          </button>
+        </form>
       </div>
     </div>
   );
