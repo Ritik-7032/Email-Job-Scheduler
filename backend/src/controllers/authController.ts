@@ -1,0 +1,83 @@
+import { Request, Response, NextFunction } from 'express';
+import { generateGoogleAuthUrl, handleGoogleCallback } from '../services/authService.js';
+import { env } from '../config/env.js';
+import { AuthenticatedRequest } from '../types/index.js';
+
+export function initiateGoogleAuth(_req: Request, res: Response): void {
+  const { url, state } = generateGoogleAuthUrl();
+
+  res.cookie('oauth_state', state, {
+    httpOnly: true,
+    secure: env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 10 * 60 * 1000,
+  });
+
+  res.redirect(url);
+}
+
+export async function handleGoogleAuthCallback(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { code, state } = req.query;
+    const storedState = req.cookies?.oauth_state;
+
+    res.clearCookie('oauth_state');
+
+    if (!code || !state) {
+      res.redirect(`${env.FRONTEND_URL}/login?error=invalid_callback_params`);
+      return;
+    }
+
+    const { token } = await handleGoogleCallback(
+      String(code),
+      String(state),
+      storedState
+    );
+
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.redirect(env.FRONTEND_URL);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export function getCurrentUser(req: AuthenticatedRequest, res: Response): void {
+  if (!req.user) {
+    res.status(401).json({
+      error: {
+        message: 'Unauthorized',
+      },
+    });
+    return;
+  }
+
+  res.json({
+    id: req.user.id,
+    name: req.user.name,
+    email: req.user.email,
+    avatar: req.user.avatar,
+  });
+}
+
+export function logoutUser(_req: Request, res: Response): void {
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: env.NODE_ENV === 'production',
+    sameSite: 'lax',
+  });
+
+  res.json({
+    success: true,
+    message: 'Logged out successfully',
+  });
+}
