@@ -1,15 +1,12 @@
 import { Queue } from 'bullmq';
 import { env } from '../config/env.js';
+import { parseRedisOptions } from '../lib/redis.js';
 import { ScheduleJobData } from '../types/index.js';
 
 export const EMAIL_QUEUE_NAME = 'email-queue';
 
 export const emailQueue = new Queue<ScheduleJobData>(EMAIL_QUEUE_NAME, {
-  connection: {
-    url: env.REDIS_URL,
-    connectTimeout: 5000,
-    maxRetriesPerRequest: null,
-  },
+  connection: parseRedisOptions(env.REDIS_URL),
   defaultJobOptions: {
     attempts: 3,
     backoff: {

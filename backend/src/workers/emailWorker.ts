@@ -205,6 +205,8 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
   logger.info({ jobId: job.id, emailId }, 'Job processed');
 }
 
+import { parseRedisOptions } from '../lib/redis.js';
+
 export function createEmailWorker(): Worker<ScheduleJobData> {
   const worker = new Worker<ScheduleJobData>(
     EMAIL_QUEUE_NAME,
@@ -212,9 +214,7 @@ export function createEmailWorker(): Worker<ScheduleJobData> {
       await processEmailJob(job, token);
     },
     {
-      connection: {
-        url: env.REDIS_URL,
-      },
+      connection: parseRedisOptions(env.REDIS_URL),
       concurrency: env.WORKER_CONCURRENCY,
     }
   );
