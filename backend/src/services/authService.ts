@@ -12,7 +12,9 @@ const oauth2Client = new OAuth2Client(
 );
 
 export function generateGoogleAuthUrl(): { url: string; state: string } {
-  const state = crypto.randomBytes(32).toString('hex');
+  const state = jwt.sign({ nonce: crypto.randomBytes(16).toString('hex') }, env.JWT_SECRET, {
+    expiresIn: '15m',
+  });
 
   const url = oauth2Client.generateAuthUrl({
     access_type: 'offline',
@@ -29,7 +31,20 @@ export async function handleGoogleCallback(
   state: string,
   storedState?: string
 ): Promise<{ token: string; user: AuthUser }> {
-  if (!state || !storedState || state !== storedState) {
+  // Validate state token: either matching cookie or valid signed JWT
+  let isValidState = false;
+  if (storedState && state === storedState) {
+    isValidState = true;
+  } else if (state) {
+    try {
+      jwt.verify(state, env.JWT_SECRET);
+      isValidState = true;
+    } catch {
+      isValidState = false;
+    }
+  }
+
+  if (!isValidState) {
     throw new Error('Invalid OAuth state parameter');
   }
 

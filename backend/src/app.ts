@@ -8,6 +8,8 @@ import { errorHandler } from './middleware/error.js';
 
 const app = express();
 
+app.set('trust proxy', 1);
+
 const rawFrontend = env.FRONTEND_URL ? env.FRONTEND_URL.replace(/\/+$/, '') : '';
 
 app.use(

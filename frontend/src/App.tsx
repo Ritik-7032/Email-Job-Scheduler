@@ -13,6 +13,16 @@ export const AppContent: React.FC = () => {
   useEffect(() => {
     async function checkAuth() {
       try {
+        // Extract token from URL query if returned from OAuth redirect
+        const params = new URLSearchParams(window.location.search);
+        const urlToken = params.get('token');
+        if (urlToken) {
+          api.setToken(urlToken);
+          params.delete('token');
+          const cleanQuery = params.toString() ? `?${params.toString()}` : '';
+          window.history.replaceState({}, document.title, `${window.location.pathname}${cleanQuery}`);
+        }
+
         const userData = await api.getMe();
         setUser(userData);
       } catch {
@@ -29,11 +39,11 @@ export const AppContent: React.FC = () => {
     setIsLoggingOut(true);
     try {
       await api.logout();
-      setUser(null);
     } catch {
-      // Still set user to null on failure
-      setUser(null);
+      // Ignored
     } finally {
+      api.clearToken();
+      setUser(null);
       setIsLoggingOut(false);
     }
   };

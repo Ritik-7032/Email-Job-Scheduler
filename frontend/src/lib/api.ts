@@ -12,20 +12,36 @@ class ApiClient {
     return (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
   }
 
+  getToken(): string | null {
+    return localStorage.getItem('reachinbox_auth_token');
+  }
+
+  setToken(token: string): void {
+    localStorage.setItem('reachinbox_auth_token', token);
+  }
+
+  clearToken(): void {
+    localStorage.removeItem('reachinbox_auth_token');
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
     const baseUrl = this.getBaseUrl();
     const url = endpoint.startsWith('http') ? endpoint : `${baseUrl}${endpoint}`;
+    const token = this.getToken();
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers as Record<string, string>),
+    };
 
     const config: RequestInit = {
       ...options,
       credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers,
     };
 
     const res = await fetch(url, config);
