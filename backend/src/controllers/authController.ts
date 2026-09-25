@@ -28,13 +28,15 @@ export async function handleGoogleAuthCallback(
 
     res.clearCookie('oauth_state');
 
+    const frontendBase = env.FRONTEND_URL.replace(/\/+$/, '');
+
     if (!code || !state) {
-      res.redirect(`${env.FRONTEND_URL}/login?error=missing_params`);
+      res.redirect(`${frontendBase}/login?error=missing_params`);
       return;
     }
 
     if (!storedState || state !== storedState) {
-      res.redirect(`${env.FRONTEND_URL}/login?error=invalid_state`);
+      res.redirect(`${frontendBase}/login?error=invalid_state`);
       return;
     }
 
@@ -51,10 +53,11 @@ export async function handleGoogleAuthCallback(
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    res.redirect(env.FRONTEND_URL);
+    res.redirect(frontendBase);
   } catch (err: unknown) {
+    const frontendBase = env.FRONTEND_URL.replace(/\/+$/, '');
     if (err instanceof Error) {
-      res.redirect(`${env.FRONTEND_URL}/login?error=${encodeURIComponent(err.message)}`);
+      res.redirect(`${frontendBase}/login?error=${encodeURIComponent(err.message)}`);
       return;
     }
     next(err);
