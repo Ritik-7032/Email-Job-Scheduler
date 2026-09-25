@@ -40,6 +40,44 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess: _onLoginSuccess })
           </svg>
           <span className="font-medium text-slate-800 text-sm">Login with Google</span>
         </a>
+
+        <div className="relative my-6">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-slate-200/80"></div>
+          </div>
+          <div className="relative flex justify-center text-xs">
+            <span className="bg-white px-3 text-slate-400 font-normal">
+              or sign up through email
+            </span>
+          </div>
+        </div>
+
+        <form
+          onSubmit={(e: React.FormEvent) => {
+            e.preventDefault();
+            window.location.href = googleAuthUrl;
+          }}
+          className="flex flex-col gap-3.5"
+        >
+          <input
+            type="email"
+            placeholder="Email ID"
+            className="w-full bg-[#f4f6f5] border-none rounded-xl px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#00a843] transition-all"
+          />
+
+          <input
+            type="password"
+            placeholder="Password"
+            className="w-full bg-[#f4f6f5] border-none rounded-xl px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#00a843] transition-all"
+          />
+
+          <button
+            type="submit"
+            className="w-full mt-2 bg-[#00a843] hover:bg-[#00923a] text-white font-medium py-3 rounded-xl transition-all shadow-sm text-sm tracking-wide"
+          >
+            Login
+          </button>
+        </form>
       </div>
     </div>
   );
