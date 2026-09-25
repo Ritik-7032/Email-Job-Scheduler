@@ -1,0 +1,128 @@
+version: '3.8'
+
+name: reachinbox-scheduler
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: reachinbox-postgres
+    restart: unless-stopped
+    networks:
+      - reachinbox-network
+    environment:
+      POSTGRES_USER: reachinbox
+      POSTGRES_PASSWORD: reachinbox_password
+      POSTGRES_DB: reachinbox_scheduler
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reachinbox -d reachinbox_scheduler"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: reachinbox-redis
+    restart: unless-stopped
+    networks:
+      - reachinbox-network
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: reachinbox-api
+    restart: unless-stopped
+    networks:
+      - reachinbox-network
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - FRONTEND_URL=http://localhost:5173
+      - DATABASE_URL=postgresql://reachinbox:reachinbox_password@postgres:5432/reachinbox_scheduler?schema=public
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=super-secret-reachinbox-scheduler-jwt-secret-key-32-chars
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-your-google-client-id.apps.googleusercontent.com}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-your-google-client-secret}
+      - GOOGLE_CALLBACK_URL=http://localhost:5000/api/auth/callback
+      - SMTP_HOST=smtp.ethereal.email
+      - SMTP_PORT=587
+      - SMTP_SECURE=false
+      - SENDER_COUNT=5
+      - WORKER_CONCURRENCY=5
+      - MIN_DELAY_BETWEEN_EMAILS_MS=2000
+      - MAX_EMAILS_PER_HOUR=200
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: reachinbox-worker
+    restart: unless-stopped
+    networks:
+      - reachinbox-network
+    command: ["node", "dist/worker.js"]
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://reachinbox:reachinbox_password@postgres:5432/reachinbox_scheduler?schema=public
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=super-secret-reachinbox-scheduler-jwt-secret-key-32-chars
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-your-google-client-id.apps.googleusercontent.com}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-your-google-client-secret}
+      - SMTP_HOST=smtp.ethereal.email
+      - SMTP_PORT=587
+      - SMTP_SECURE=false
+      - SENDER_COUNT=5
+      - WORKER_CONCURRENCY=5
+      - MIN_DELAY_BETWEEN_EMAILS_MS=2000
+      - MAX_EMAILS_PER_HOUR=200
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: reachinbox-frontend
+    restart: unless-stopped
+    networks:
+      - reachinbox-network
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+    name: reachinbox_postgres_data
+  redis_data:
+    name: reachinbox_redis_data
+
+networks:
+  reachinbox-network:
+    name: reachinbox-scheduler-net

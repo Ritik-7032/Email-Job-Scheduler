@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EmailStatus {
+  scheduled
+  processing
+  sent
+  failed
+}
+
+model User {
+  id        String   @id @default(uuid())
+  googleId  String   @unique
+  name      String
+  email     String   @unique
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  batches   Batch[]
+  emails    Email[]
+}
+
+model Sender {
+  id           String   @id @default(uuid())
+  email        String
+  smtpUser     String
+  smtpPassword String
+  createdAt    DateTime @default(now())
+
+  emails       Email[]
+}
+
+model Batch {
+  id          String   @id @default(uuid())
+  userId      String
+  delayMs     Int
+  hourlyLimit Int
+  startAt     DateTime
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emails      Email[]
+
+  @@index([userId])
+}
+
+model Email {
+  id                  String      @id @default(uuid())
+  userId              String
+  batchId             String
+  senderId            String
+  recipient           String
+  subject             String
+  body                String
+  scheduledAt         DateTime
+  sentAt              DateTime?
+  status              EmailStatus @default(scheduled)
+  attempts            Int         @default(0)
+  errorMessage        String?
+  messageId           String?
+  previewUrl          String?
+  enqueuedAt          DateTime?
+  processingStartedAt DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  user                User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  batch               Batch       @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  sender              Sender      @relation(fields: [senderId], references: [id])
+
+  @@index([userId, status, scheduledAt])
+  @@index([userId, status, sentAt])
+  @@index([batchId])
+}

@@ -1,0 +1,16 @@
+{
+  "name": "reachinbox-scheduler-root",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Full-Stack Email Job Scheduler for ReachInbox.ai",
+  "scripts": {
+    "dev": "npm --prefix backend run dev",
+    "worker": "npm --prefix backend run worker",
+    "client": "npm --prefix frontend run dev",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build",
+    "test": "npm --prefix backend test",
+    "seed:senders": "npm --prefix backend run seed:senders",
+    "requeue": "npm --prefix backend run requeue",
+    "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck"
+  }
+}

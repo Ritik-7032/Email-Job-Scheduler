@@ -1,0 +1,26 @@
+services:
+  # Single Free Web Service (Runs API + Queue Worker combined)
+  - type: web
+    name: reachinbox-scheduler-backend
+    env: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_CALLBACK_URL
+        value: https://reachinbox-scheduler-backend.onrender.com/api/auth/callback
+      - key: JWT_SECRET
+        generateValue: true
