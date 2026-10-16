@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { generateGoogleAuthUrl, handleGoogleCallback } from '../services/authService.js';
+import { generateGoogleAuthUrl, handleGoogleCallback, loginDemoUser } from '../services/authService.js';
 import { env } from '../config/env.js';
 import { AuthenticatedRequest } from '../types/index.js';
 
@@ -93,4 +93,29 @@ export function logoutUser(_req: Request, res: Response): void {
     success: true,
     message: 'Logged out successfully',
   });
+}
+
+export async function handleDemoLogin(
+  _req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { token, user } = await loginDemoUser();
+
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: env.NODE_ENV === 'production',
+      sameSite: env.NODE_ENV === 'production' ? 'none' : 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.json({
+      success: true,
+      token,
+      user,
+    });
+  } catch (err) {
+    next(err);
+  }
 }

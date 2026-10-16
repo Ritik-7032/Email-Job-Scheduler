@@ -85,6 +85,19 @@ class ApiClient {
       }
     );
   }
+
+  async demoLogin(): Promise<{ success: boolean; token: string; user: User }> {
+    const res = await this.request<{ success: boolean; token: string; user: User }>(
+      '/api/auth/demo',
+      {
+        method: 'POST',
+      }
+    );
+    if (res.token) {
+      this.setToken(res.token);
+    }
+    return res;
+  }
   async scheduleEmails(data: ScheduleRequest): Promise<ScheduleResponse> {
     return this.request<ScheduleResponse>('/api/emails/schedule', {
       method: 'POST',

@@ -90,6 +90,33 @@ export async function handleGoogleCallback(
   return { token, user: authUser };
 }
 
+export async function loginDemoUser(): Promise<{ token: string; user: AuthUser }> {
+  const demoUser = await prisma.user.upsert({
+    where: { googleId: 'demo-recruiter-id' },
+    update: {
+      name: 'Demo Recruiter',
+      email: 'recruiter@demo.com',
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
+    },
+    create: {
+      googleId: 'demo-recruiter-id',
+      name: 'Demo Recruiter',
+      email: 'recruiter@demo.com',
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
+    },
+  });
+
+  const authUser: AuthUser = {
+    id: demoUser.id,
+    email: demoUser.email,
+    name: demoUser.name,
+    avatar: demoUser.avatar,
+  };
+
+  const token = jwt.sign(authUser, env.JWT_SECRET, { expiresIn: '7d' });
+  return { token, user: authUser };
+}
+
 export function verifyJwtToken(token: string): AuthUser | null {
   try {
     return jwt.verify(token, env.JWT_SECRET) as AuthUser;
