@@ -13,12 +13,10 @@ export const emailQueue = new Queue<ScheduleJobData>(EMAIL_QUEUE_NAME, {
       type: 'exponential',
       delay: 5000,
     },
-    removeOnComplete: {
-      count: 1000,
-      age: 86400,
-    },
+    // Clean up completed jobs immediately to eliminate jobId collision risks on reconciler recovery
+    removeOnComplete: true,
     removeOnFail: {
-      count: 1000,
+      count: 500,
       age: 86400,
     },
   },

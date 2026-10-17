@@ -53,8 +53,10 @@ export async function checkAndAcquireSenderSlot(
   hourlyLimit: number
 ): Promise<{ allowed: boolean; waitMs: number; windowKey: string }> {
   const now = new Date();
-  // Randomized 0-1500ms jitter desynchronizes worker retry waves at the UTC hour boundary
-  const jitterMs = Math.floor(Math.random() * 1500);
+  // Proportional jitter scaled by delayMs avoids clustering around the 2s gap key
+  // windowKey is strictly grounded in 'now' to prevent hourly quota leakage
+  const maxJitterMs = Math.min(30000, Math.max(2000, Math.floor(hourlyLimit * (delayMs / 20))));
+  const jitterMs = Math.floor(Math.random() * maxJitterMs);
   const { windowKey, msToNextHour } = getUtcHourWindow(now, jitterMs);
 
   const gapKey = `gap:${senderId}`;

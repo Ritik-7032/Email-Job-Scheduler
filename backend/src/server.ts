@@ -17,7 +17,9 @@ async function bootstrap() {
   // the worker can run in-process when SEPARATE_WORKER is not set.
   const isSeparateWorker = process.env.SEPARATE_WORKER === 'true';
 
-  setTimeout(() => {
+  // setImmediate ensures the HTTP listener port binds on tick 0 so cloud platform
+  // health-checks pass instantly before queue worker and DB reconciler bootstrap.
+  setImmediate(() => {
     if (!isSeparateWorker) {
       try {
         createEmailWorker();
