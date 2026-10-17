@@ -8,13 +8,17 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(5000),
   FRONTEND_URL: z.string().url().default('http://localhost:5173'),
-  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
-  REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
+  DATABASE_URL: z.string().default(
+    process.env.NODE_ENV === 'test'
+      ? 'postgresql://mock:mock@localhost:5432/mock_db?schema=public'
+      : 'postgresql://reachinbox:reachinbox_password@localhost:5432/reachinbox_scheduler?schema=public'
+  ),
+  REDIS_URL: z.string().default('redis://localhost:6379'),
 
-  GOOGLE_CLIENT_ID: z.string().min(1, 'GOOGLE_CLIENT_ID is required'),
-  GOOGLE_CLIENT_SECRET: z.string().min(1, 'GOOGLE_CLIENT_SECRET is required'),
+  GOOGLE_CLIENT_ID: z.string().default(process.env.NODE_ENV === 'test' ? 'mock-google-client-id' : ''),
+  GOOGLE_CLIENT_SECRET: z.string().default(process.env.NODE_ENV === 'test' ? 'mock-google-client-secret' : ''),
   GOOGLE_CALLBACK_URL: z.string().url().default('http://localhost:5000/api/auth/callback'),
-  JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
+  JWT_SECRET: z.string().default(process.env.NODE_ENV === 'test' ? 'test-jwt-secret-key-must-be-min-16-chars' : ''),
 
   SMTP_HOST: z.string().default('smtp.ethereal.email'),
   SMTP_PORT: z.coerce.number().default(587),
