@@ -216,7 +216,7 @@ email-job-scheduler/
 │   │   ├── queue/                # BullMQ queue definition
 │   │   ├── repositories/         # Prisma queries & transactional batches
 │   │   ├── routes/               # Express route definitions
-│   │   ├── scripts/              # Sender seeder & requeue utilities
+│   │   ├── scripts/              # Sender seeder, benchmark & requeue utilities
 │   │   ├── services/             # Auth, Scheduling, and Lua Rate Limiter
 │   │   ├── types/                # Backend TypeScript types
 │   │   ├── validators/           # Zod validation schemas

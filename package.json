@@ -11,6 +11,7 @@
     "test": "npm --prefix backend test",
     "seed:senders": "npm --prefix backend run seed:senders",
     "requeue": "npm --prefix backend run requeue",
+    "benchmark": "npm --prefix backend run benchmark",
     "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck"
   }
 }
