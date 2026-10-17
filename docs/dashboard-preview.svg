@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 520" width="100%" height="100%" style="background:#0f172a; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; border-radius:12px;">
+  <defs>
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="btnGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Top Browser Bar -->
+  <rect x="0" y="0" width="1000" height="42" fill="#1e293b" rx="12 12 0 0" />
+  <circle cx="25" cy="21" r="6" fill="#ef4444" />
+  <circle cx="45" cy="21" r="6" fill="#eab308" />
+  <circle cx="65" cy="21" r="6" fill="#22c55e" />
+  <rect x="300" y="8" width="400" height="26" rx="6" fill="#0f172a" />
+  <text x="500" y="25" fill="#94a3b8" font-size="12" text-anchor="middle">email-job-scheduler-alpha.vercel.app</text>
+
+  <!-- Navigation Bar -->
+  <rect x="20" y="60" width="960" height="60" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1" />
+  <text x="44" y="96" fill="#f8fafc" font-size="18" font-weight="700">⚡ Email Job Scheduler</text>
+  
+  <!-- Action Buttons -->
+  <rect x="670" y="74" width="160" height="32" rx="6" fill="url(#btnGrad)" />
+  <text x="750" y="95" fill="#ffffff" font-size="13" font-weight="600" text-anchor="middle">+ Compose Campaign</text>
+  <rect x="845" y="74" width="115" height="32" rx="6" fill="#334155" />
+  <text x="902" y="95" fill="#e2e8f0" font-size="13" font-weight="500" text-anchor="middle">👤 Demo User</text>
+
+  <!-- Tab Bar & Search -->
+  <rect x="20" y="140" width="960" height="48" fill="#1e293b" rx="8 8 0 0" stroke="#334155" stroke-width="1" />
+  <rect x="25" y="145" width="160" height="38" rx="6" fill="#0f172a" />
+  <text x="105" y="169" fill="#38bdf8" font-size="13" font-weight="600" text-anchor="middle">Scheduled Emails (12)</text>
+  <text x="260" y="169" fill="#94a3b8" font-size="13" font-weight="500" text-anchor="middle">Sent Emails (88)</text>
+  
+  <!-- Search Input -->
+  <rect x="680" y="148" width="280" height="32" rx="6" fill="#0f172a" stroke="#334155" stroke-width="1" />
+  <text x="700" y="169" fill="#64748b" font-size="12">🔍 Search recipient or subject...</text>
+
+  <!-- Table Header -->
+  <rect x="20" y="188" width="960" height="38" fill="#0f172a" stroke="#334155" stroke-width="1" />
+  <text x="44" y="212" fill="#64748b" font-size="12" font-weight="600">RECIPIENT</text>
+  <text x="290" y="212" fill="#64748b" font-size="12" font-weight="600">SUBJECT</text>
+  <text x="510" y="212" fill="#64748b" font-size="12" font-weight="600">SCHEDULED AT</text>
+  <text x="730" y="212" fill="#64748b" font-size="12" font-weight="600">SENDER POOL</text>
+  <text x="890" y="212" fill="#64748b" font-size="12" font-weight="600">STATUS</text>
+
+  <!-- Table Row 1 -->
+  <rect x="20" y="226" width="960" height="52" fill="#1e293b" stroke="#334155" stroke-width="1" />
+  <text x="44" y="257" fill="#f1f5f9" font-size="13" font-weight="500">sarah.t@enterprise.com</text>
+  <text x="290" y="257" fill="#cbd5e1" font-size="13">Product Update v2.4 (October)</text>
+  <text x="510" y="257" fill="#94a3b8" font-size="13">Today, 10:00:00 AM</text>
+  <text x="730" y="257" fill="#94a3b8" font-size="13">pool-sender-1@ethereal</text>
+  <rect x="880" y="240" width="80" height="24" rx="12" fill="#0369a1" />
+  <text x="920" y="256" fill="#bae6fd" font-size="11" font-weight="600" text-anchor="middle">Scheduled</text>
+
+  <!-- Table Row 2 -->
+  <rect x="20" y="278" width="960" height="52" fill="#0f172a" stroke="#334155" stroke-width="1" />
+  <text x="44" y="309" fill="#f1f5f9" font-size="13" font-weight="500">alex.k@growth.io</text>
+  <text x="290" y="309" fill="#cbd5e1" font-size="13">Product Update v2.4 (October)</text>
+  <text x="510" y="309" fill="#94a3b8" font-size="13">Today, 10:00:02 AM</text>
+  <text x="730" y="309" fill="#94a3b8" font-size="13">pool-sender-2@ethereal</text>
+  <rect x="880" y="292" width="80" height="24" rx="12" fill="#0369a1" />
+  <text x="920" y="308" fill="#bae6fd" font-size="11" font-weight="600" text-anchor="middle">Scheduled</text>
+
+  <!-- Table Row 3 -->
+  <rect x="20" y="330" width="960" height="52" fill="#1e293b" stroke="#334155" stroke-width="1" />
+  <text x="44" y="361" fill="#f1f5f9" font-size="13" font-weight="500">maria.v@cloudtech.org</text>
+  <text x="290" y="361" fill="#cbd5e1" font-size="13">Product Update v2.4 (October)</text>
+  <text x="510" y="361" fill="#94a3b8" font-size="13">Today, 10:00:04 AM</text>
+  <text x="730" y="361" fill="#94a3b8" font-size="13">pool-sender-3@ethereal</text>
+  <rect x="880" y="344" width="80" height="24" rx="12" fill="#854d0e" />
+  <text x="920" y="360" fill="#fef08a" font-size="11" font-weight="600" text-anchor="middle">Processing</text>
+
+  <!-- Table Row 4 -->
+  <rect x="20" y="382" width="960" height="52" fill="#0f172a" stroke="#334155" stroke-width="1" />
+  <text x="44" y="413" fill="#f1f5f9" font-size="13" font-weight="500">david.l@retail.co</text>
+  <text x="290" y="413" fill="#cbd5e1" font-size="13">Welcome to Enterprise Onboarding</text>
+  <text x="510" y="413" fill="#94a3b8" font-size="13">Today, 09:58:30 AM</text>
+  <text x="730" y="413" fill="#94a3b8" font-size="13">pool-sender-1@ethereal</text>
+  <rect x="880" y="396" width="80" height="24" rx="12" fill="#166534" />
+  <text x="920" y="412" fill="#bbf7d0" font-size="11" font-weight="600" text-anchor="middle">Sent ↗</text>
+
+  <!-- Table Pagination Footer -->
+  <rect x="20" y="434" width="960" height="50" rx="0 0 8 8" fill="#1e293b" stroke="#334155" stroke-width="1" />
+  <text x="44" y="464" fill="#94a3b8" font-size="13">Showing <tspan fill="#f8fafc" font-weight="600">1 – 4</tspan> of <tspan fill="#f8fafc" font-weight="600">100</tspan> emails</text>
+  <rect x="800" y="445" width="75" height="28" rx="4" fill="#334155" />
+  <text x="837" y="463" fill="#94a3b8" font-size="12" text-anchor="middle">&lt; Prev</text>
+  <rect x="885" y="445" width="75" height="28" rx="4" fill="#334155" />
+  <text x="922" y="463" fill="#f8fafc" font-size="12" text-anchor="middle">Next &gt;</text>
+</svg>
