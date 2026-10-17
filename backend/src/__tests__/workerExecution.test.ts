@@ -229,7 +229,8 @@ describe('Worker Lifecycle and Job Processing Engine', () => {
     });
   });
 
-  it('handles SMTP firewall timeout by using simulated fallback transport', async () => {
+  it('rethrows SMTP timeout in production so BullMQ applies exponential backoff retry', async () => {
+    delete process.env.DEMO_SIMULATE_SMTP;
     vi.spyOn(prisma.email, 'findUnique').mockResolvedValue(mockEmail as any);
     vi.spyOn(rateLimiter, 'checkAndAcquireSenderSlot').mockResolvedValue({
       allowed: true,
@@ -238,13 +239,43 @@ describe('Worker Lifecycle and Job Processing Engine', () => {
     });
     vi.spyOn(prisma, '$executeRaw').mockResolvedValue(1 as any);
 
-    // Primary transport fails with ETIMEDOUT, fallback succeeds
+    vi.spyOn(nodemailer, 'createTransport').mockReturnValue({
+      sendMail: vi.fn().mockRejectedValue(new Error('connect ETIMEDOUT 127.0.0.1:587')),
+    } as any);
+
+    const releaseSpy = vi.spyOn(rateLimiter, 'releaseHourlySlot').mockResolvedValue();
+    const updateSpy = vi.spyOn(prisma.email, 'update').mockResolvedValue({} as any);
+    const mockJob = createMockJob(0, 3);
+
+    await expect(processEmailJob(mockJob as any, 'token')).rejects.toThrow('connect ETIMEDOUT 127.0.0.1:587');
+
+    expect(releaseSpy).toHaveBeenCalledWith('sender-1', '2026092414');
+    expect(updateSpy).toHaveBeenCalledWith({
+      where: { id: 'email-123' },
+      data: expect.objectContaining({
+        status: 'scheduled',
+        attempts: 1,
+        errorMessage: 'connect ETIMEDOUT 127.0.0.1:587',
+      }),
+    });
+  });
+
+  it('permits simulated delivery only when DEMO_SIMULATE_SMTP is explicitly active', async () => {
+    process.env.DEMO_SIMULATE_SMTP = 'true';
+    vi.spyOn(prisma.email, 'findUnique').mockResolvedValue(mockEmail as any);
+    vi.spyOn(rateLimiter, 'checkAndAcquireSenderSlot').mockResolvedValue({
+      allowed: true,
+      waitMs: 0,
+      windowKey: '2026092414',
+    });
+    vi.spyOn(prisma, '$executeRaw').mockResolvedValue(1 as any);
+
     vi.spyOn(nodemailer, 'createTransport')
       .mockReturnValueOnce({
         sendMail: vi.fn().mockRejectedValue(new Error('connect ETIMEDOUT 127.0.0.1:587')),
       } as any)
       .mockReturnValueOnce({
-        sendMail: vi.fn().mockResolvedValue({ messageId: '<simulated-email-123@reachinbox.com>' }),
+        sendMail: vi.fn().mockResolvedValue({ messageId: '<email-123@reachinbox.scheduler>' }),
       } as any);
 
     const updateSpy = vi.spyOn(prisma.email, 'update').mockResolvedValue({} as any);
@@ -256,9 +287,10 @@ describe('Worker Lifecycle and Job Processing Engine', () => {
       where: { id: 'email-123' },
       data: expect.objectContaining({
         status: 'sent',
-        messageId: '<simulated-email-123@reachinbox.com>',
+        messageId: '<email-123@reachinbox.scheduler>',
       }),
     });
+    delete process.env.DEMO_SIMULATE_SMTP;
   });
 
   it('survives DB update failure after dispatch when all 3 update attempts fail', async () => {

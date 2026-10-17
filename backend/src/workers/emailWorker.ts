@@ -110,9 +110,13 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
   }
 
   const transporter = getOrCreateTransporter(sender);
+  const deterministicMessageId = `<${email.id}@reachinbox.scheduler>`;
 
   let sendInfo: nodemailer.SentMessageInfo;
   try {
+    const isSafeUrl = (url: string) =>
+      /^(https?:\/\/|data:image\/(png|jpe?g|gif|webp);base64,)/i.test(url.trim());
+
     const formatBodyToHtml = (content: string) => {
       let html = content
         .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
@@ -120,11 +124,17 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
         .replace(/~~(.*?)~~/g, '<s>$1</s>')
         .replace(
           /!\[(.*?)\]\((.*?)\)/g,
-          '<div style="margin: 12px 0;"><img src="$2" alt="$1" style="max-width: 100%; max-height: 400px; border-radius: 12px; display: block;" /></div>'
+          (_match, alt, src) =>
+            isSafeUrl(src)
+              ? `<div style="margin: 12px 0;"><img src="${src}" alt="${alt}" style="max-width: 100%; max-height: 400px; border-radius: 12px; display: block;" /></div>`
+              : `<div style="margin: 12px 0;">[Image: ${alt}]</div>`
         )
         .replace(
           /📎\s*\[Attachment:\s*(.*?)\]\((.*?)\)/g,
-          '<div style="margin: 8px 0;"><a href="$2" download="$1" style="display:inline-block; padding:8px 14px; background:#f4f6f5; border:1px solid #e0e0e0; border-radius:8px; text-decoration:none; color:#1a1a1a; font-family:sans-serif; font-size:12px; font-weight:600;">📎 $1</a></div>'
+          (_match, name, href) =>
+            isSafeUrl(href)
+              ? `<div style="margin: 8px 0;"><a href="${href}" download="${name}" style="display:inline-block; padding:8px 14px; background:#f4f6f5; border:1px solid #e0e0e0; border-radius:8px; text-decoration:none; color:#1a1a1a; font-family:sans-serif; font-size:12px; font-weight:600;">📎 ${name}</a></div>`
+              : `<div style="margin: 8px 0;">📎 ${name}</div>`
         );
 
       if (!/<[a-z][\s\S]*>/i.test(content)) {
@@ -140,15 +150,17 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
         subject: email.subject,
         text: email.body,
         html: formatBodyToHtml(email.body),
+        messageId: deterministicMessageId,
       });
     } catch (smtpErr: unknown) {
       const err = smtpErr instanceof Error ? smtpErr : new Error(String(smtpErr));
-      if (
-        err.message.toLowerCase().includes('timeout') ||
-        err.message.includes('ETIMEDOUT') ||
-        err.message.includes('ECONNREFUSED')
-      ) {
-        logger.warn({ emailId, err: err.message }, 'SMTP blocked by host firewall; dispatched via simulated delivery');
+      // Real-world production behavior: network drops rethrow for BullMQ exponential backoff.
+      // Offline fallback is strictly isolated to explicit DEMO_SIMULATE_SMTP=true environments.
+      if (process.env.DEMO_SIMULATE_SMTP === 'true') {
+        logger.warn(
+          { emailId, err: err.message },
+          'DEMO_SIMULATE_SMTP active: executing simulated offline delivery'
+        );
         const fallbackTransporter = nodemailer.createTransport({ jsonTransport: true });
         sendInfo = await fallbackTransporter.sendMail({
           from: `"${sender.email}" <${sender.email}>`,
@@ -156,8 +168,9 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
           subject: email.subject,
           text: email.body,
           html: formatBodyToHtml(email.body),
+          messageId: deterministicMessageId,
         });
-        sendInfo.messageId = sendInfo.messageId || `<simulated-${emailId}@reachinbox.com>`;
+        sendInfo.messageId = deterministicMessageId;
       } else {
         throw err;
       }
