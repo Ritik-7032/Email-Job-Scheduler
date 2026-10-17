@@ -1,7 +1,7 @@
 # Email Job Scheduler
 
 [![CI](https://github.com/Ritik-7032/Email-Job-Scheduler/actions/workflows/ci.yml/badge.svg)](https://github.com/Ritik-7032/Email-Job-Scheduler/actions/workflows/ci.yml)
-![Test Suite](https://img.shields.io/badge/Vitest-35%2F35%20Passed-brightgreen)
+![Test Suite](https://img.shields.io/badge/Vitest-36%2F36%20Passed-brightgreen)
 ![Core Engine Coverage](https://img.shields.io/badge/Core%20Engine%20Coverage-90%25%2B-brightgreen)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)
 ![Node](https://img.shields.io/badge/Node.js-%3E%3D20-green)
@@ -93,7 +93,7 @@ The system schedules and sends email batches with per-sender minimum delays and 
 
 - **Backend**: Node.js, TypeScript, Express, BullMQ, ioredis, PostgreSQL, Prisma, Nodemailer, Zod, google-auth-library, jsonwebtoken, Pino.
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Lucide icons, Nginx.
-- **Testing**: Vitest, Supertest (30/30 Unit Tests).
+- **Testing**: Vitest, Supertest (36/36 Unit Tests).
 - **Infra**: Docker Compose (Full-stack containerization with isolated network & persistent volumes).
 
 ---
@@ -188,12 +188,12 @@ npm --prefix backend run test:coverage
 | Module / Component | Line Coverage | Branch Coverage | Focus Area |
 | :--- | :---: | :---: | :--- |
 | **Rate Limiter Lua Script** (`rateLimiter.ts`) | 100% | 100% | Atomic gap TTL checks, UTC hourly resets, slot reservations |
-| **Requeue & Crash Recovery** (`requeueService.ts`) | 100% | 96.4% | Orphaned job requeuing, stale processing reconciliations, P2021 error safety |
-| **Email Worker Processor** (`emailWorker.ts`) | 87.8% | 84.1% | Atomic SQL claims, SMTP fallback simulation, moveToDelayed handling, retry exhaustion |
+| **Requeue & Crash Recovery** (`requeueService.ts`) | 100% | 100% | Orphaned job requeuing, stale processing reconciliations, P2021 error safety |
+| **Email Worker Processor** (`emailWorker.ts`) | 84.0% | 86.0% | Atomic SQL claims, moveToDelayed handling, retry exhaustion, HTML/XSS sanitization |
 | **Input Validator** (`scheduleValidator.ts`) | 100% | 100% | Bounds checking, recipient limits, RFC 5322 validation |
 | **Email Queue Initialization** (`emailQueue.ts`) | 100% | 100% | BullMQ connection and queue options |
 | **Database Transaction Ingestion** (`emailRepository.ts`) | 57.1% | 87.5% | Chunked batch creation, bulk updates |
-| **Overall Backend Codebase** | **62.8%** | **71.6%** | Full backend source files (excluding scripts/entrypoints) |
+| **Overall Backend Codebase** | **62.3%** | **72.5%** | Full backend source files (excluding scripts/entrypoints) |
 
 ---
 
@@ -278,6 +278,8 @@ cp backend/.env.example backend/.env
 | `DEFAULT_HOURLY_LIMIT` | Default hourly limit in UI | `200` |
 | `MAX_RECIPIENTS_PER_REQUEST` | Maximum recipient count in a single request | `10000` |
 | `STALE_PROCESSING_MS` | Crash recovery duration for stuck processing rows | `300000` (5 mins) |
+| `SEPARATE_WORKER` | When `true`, stops API server from launching an in-process worker | `false` |
+| `DEMO_SIMULATE_SMTP` | Enable offline fallback simulation when outbound SMTP is blocked (e.g. Render free tier) | `false` |
 
 ---
 
@@ -374,7 +376,7 @@ WHERE "id" = $id
 ### Enqueue & Crash Recovery Window
 - If the API server crashes after inserting database rows but before BullMQ enqueueing finishes, the rows remain with `enqueuedAt = null`.
 - On API startup and via `npm run requeue`, `requeueOrphanedEmails()` executes a chunked while-loop (fetching in chunks of 500) to recover any volume of orphaned records (>500 or 1000+) without loading the entire backlog into memory, enqueueing them with their stable UUID `jobId`.
-- Additionally, `recoverStaleProcessingEmails()` inspects rows stuck in `processing`: if `messageId` was already assigned, status is safely reconciled to `sent`; if attempts are exhausted, status is marked `failed`; otherwise, status is reset to `scheduled` for safe re-enqueueing and retry.
+- Additionally, `recoverStaleProcessingEmails()` inspects rows stuck in `processing` beyond `STALE_PROCESSING_MS`: if attempts are exhausted ($\ge 3$), status is marked `failed`; otherwise, status is reset to `scheduled` (with `enqueuedAt = null` and `processingStartedAt = null`) for safe at-least-once re-enqueueing and retry.
 
 ---
 
@@ -404,6 +406,7 @@ The system is architected to handle bulk batches of 1,000+ recipients reliably w
 2. **Ethereal Test Senders**: Test accounts are generated dynamically on startup/seeding rather than using production SMTP credentials.
 3. **UTC Hourly Windows**: Hourly limits reset at the start of each UTC hour (e.g. `14:00:00 UTC`), rather than on a rolling 60-minute sliding window.
 4. **At-Least-Once Delivery & SMTP Dual-Write Boundary**: Sending an email via SMTP is an external network operation that cannot be joined into an atomic two-phase commit (2PC) with PostgreSQL. Under normal operations, atomic SQL conditional claims prevent duplicate worker processing. If a worker process crashes precisely after SMTP accepts a message but before PostgreSQL commits `status = 'sent'`, the reconciler (`recoverStaleProcessingEmails`) resets uncommitted processing rows to `scheduled` after the 5-minute timeout. This prioritizes **at-least-once delivery** over message loss. To enable downstream Mail Transfer Agents (MTAs) and recipient inboxes to deduplicate any re-delivered message, outbound emails set a deterministic RFC 5322 header: `Message-ID: <${emailId}@reachinbox.scheduler>`.
+5. **Content Sanitization**: Email bodies support markdown elements (images, attachments, bold, italic, strikethrough). When raw HTML is submitted, an internal sanitizer strips potentially dangerous elements (`<script>`, `<iframe>`, `<object>`, `<embed>`), inline `on*` event handlers, and executable URI protocols (`javascript:`, `data:`).
 
 ---
 

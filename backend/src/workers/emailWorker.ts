@@ -125,11 +125,22 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
 
+    const sanitizeRawHtml = (raw: string) =>
+      raw
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+        .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+        .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
+        .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, '')
+        .replace(/\son\w+\s*=\s*(['"]).*?\1/gi, '')
+        .replace(/\son\w+\s*=[^\s>]+/gi, '')
+        .replace(
+          /(href|src)\s*=\s*(?:"(?:javascript|data):[^"]*"|'(?:javascript|data):[^']*'|(?:javascript|data):[^\s>]+)/gi,
+          '$1="#"'
+        );
+
     const formatBodyToHtml = (content: string) => {
+      // 1. Process images and attachments first to avoid syntax collisions with asterisks in URLs
       let html = content
-        .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
-        .replace(/\*(.*?)\*/g, '<i>$1</i>')
-        .replace(/~~(.*?)~~/g, '<s>$1</s>')
         .replace(
           /!\[(.*?)\]\((.*?)\)/g,
           (_match, alt, src) =>
@@ -143,10 +154,15 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
             isSafeUrl(href)
               ? `<div style="margin: 8px 0;"><a href="${escapeHtmlAttr(href)}" download="${escapeHtmlAttr(name)}" style="display:inline-block; padding:8px 14px; background:#f4f6f5; border:1px solid #e0e0e0; border-radius:8px; text-decoration:none; color:#1a1a1a; font-family:sans-serif; font-size:12px; font-weight:600;">📎 ${escapeHtmlAttr(name)}</a></div>`
               : `<div style="margin: 8px 0;">📎 ${escapeHtmlAttr(name)}</div>`
-        );
+        )
+        .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+        .replace(/\*(.*?)\*/g, '<i>$1</i>')
+        .replace(/~~(.*?)~~/g, '<s>$1</s>');
 
       if (!/<[a-z][\s\S]*>/i.test(content)) {
         html = html.replace(/\n/g, '<br/>');
+      } else {
+        html = sanitizeRawHtml(html);
       }
       return html;
     };
@@ -164,7 +180,7 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
       const err = smtpErr instanceof Error ? smtpErr : new Error(String(smtpErr));
       // Real-world production behavior: network drops rethrow for BullMQ exponential backoff.
       // Offline fallback is strictly isolated to explicit DEMO_SIMULATE_SMTP=true environments.
-      if (process.env.DEMO_SIMULATE_SMTP === 'true') {
+      if (env.DEMO_SIMULATE_SMTP || process.env.DEMO_SIMULATE_SMTP === 'true') {
         logger.warn(
           { emailId, err: err.message },
           'DEMO_SIMULATE_SMTP active: executing simulated offline delivery'

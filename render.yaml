@@ -24,3 +24,6 @@ services:
         value: https://reachinbox-scheduler-backend.onrender.com/api/auth/callback
       - key: JWT_SECRET
         generateValue: true
+      - key: DEMO_SIMULATE_SMTP
+        value: "true"
+

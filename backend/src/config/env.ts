@@ -28,6 +28,7 @@ const envSchema = z.object({
   DEFAULT_HOURLY_LIMIT: z.coerce.number().min(1).default(200),
   MAX_RECIPIENTS_PER_REQUEST: z.coerce.number().min(1).default(10000),
   STALE_PROCESSING_MS: z.coerce.number().min(1000).default(300000),
+  DEMO_SIMULATE_SMTP: z.preprocess((val) => val === 'true' || val === true, z.boolean()).default(false),
 });
 
 const parseEnv = () => {

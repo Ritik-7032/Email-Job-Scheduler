@@ -313,4 +313,53 @@ describe('Worker Lifecycle and Job Processing Engine', () => {
     // Should complete without throwing unhandled rejection so messageId isn't lost
     await expect(processEmailJob(mockJob as any, 'token')).resolves.toBeUndefined();
   });
+
+  it('sanitizes raw HTML stripping script, iframe, object, embed tags, on-handlers, and javascript: links', async () => {
+    const maliciousBody = `
+      Hello!
+      <script>alert("pwned")</script>
+      <iframe src="https://evil.com"></iframe>
+      <object data="malicious.swf"></object>
+      <embed src="malicious.pdf"></embed>
+      <img src="https://example.com/pic.jpg" onerror="stealCookies()" />
+      <a href="javascript:alert('xss')">Click here</a>
+      **Bold announcement**
+    `;
+
+    vi.spyOn(prisma.email, 'findUnique').mockResolvedValue({
+      ...mockEmail,
+      body: maliciousBody,
+    } as any);
+    vi.spyOn(rateLimiter, 'checkAndAcquireSenderSlot').mockResolvedValue({
+      allowed: true,
+      waitMs: 0,
+      windowKey: '2026092414',
+    });
+    vi.spyOn(prisma, '$executeRaw').mockResolvedValue(1 as any);
+
+    const mockSendMail = vi.fn().mockResolvedValue({ messageId: '<msg-xss-test>' });
+    vi.spyOn(nodemailer, 'createTransport').mockReturnValue({
+      sendMail: mockSendMail,
+    } as any);
+    vi.spyOn(nodemailer, 'getTestMessageUrl').mockReturnValue(null as any);
+    vi.spyOn(prisma.email, 'update').mockResolvedValue({} as any);
+
+    const mockJob = createMockJob(0, 3);
+    await processEmailJob(mockJob as any, 'token');
+
+    expect(mockSendMail).toHaveBeenCalled();
+    const sentHtml = mockSendMail.mock.calls[0][0].html;
+
+    expect(sentHtml).not.toContain('<script>');
+    expect(sentHtml).not.toContain('alert("pwned")');
+    expect(sentHtml).not.toContain('<iframe');
+    expect(sentHtml).not.toContain('<object');
+    expect(sentHtml).not.toContain('<embed');
+    expect(sentHtml).not.toContain('onerror');
+    expect(sentHtml).not.toContain('stealCookies');
+    expect(sentHtml).not.toContain('javascript:');
+    expect(sentHtml).toContain('href="#"');
+    expect(sentHtml).toContain('<b>Bold announcement</b>');
+  });
 });
+

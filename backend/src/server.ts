@@ -43,7 +43,7 @@ async function bootstrap() {
       .catch((err) => {
         logger.warn({ err }, 'Non-fatal: Startup recovery check deferred');
       });
-  }, 50);
+  });
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Server shutting down gracefully...');
