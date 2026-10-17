@@ -1,8 +1,8 @@
 # Email Job Scheduler
 
 [![CI](https://github.com/Ritik-7032/Email-Job-Scheduler/actions/workflows/ci.yml/badge.svg)](https://github.com/Ritik-7032/Email-Job-Scheduler/actions/workflows/ci.yml)
-![Test Suite](https://img.shields.io/badge/Vitest-30%2F30%20Passed-brightgreen)
-![Core Engine Coverage](https://img.shields.io/badge/Core%20Engine%20Coverage-85%25%2B-brightgreen)
+![Test Suite](https://img.shields.io/badge/Vitest-34%2F34%20Passed-brightgreen)
+![Core Engine Coverage](https://img.shields.io/badge/Core%20Engine%20Coverage-90%25%2B-brightgreen)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)
 ![Node](https://img.shields.io/badge/Node.js-%3E%3D20-green)
 ![License](https://img.shields.io/badge/License-MIT-purple)
@@ -188,12 +188,12 @@ npm --prefix backend run test:coverage
 | Module / Component | Line Coverage | Branch Coverage | Focus Area |
 | :--- | :---: | :---: | :--- |
 | **Rate Limiter Lua Script** (`rateLimiter.ts`) | 100% | 100% | Atomic gap TTL checks, UTC hourly resets, slot reservations |
-| **Email Worker Processor** (`emailWorker.ts`) | 84.5% | 80.5% | Atomic SQL claims, SMTP fallback, moveToDelayed handling |
-| **Requeue & Crash Recovery** (`requeueService.ts`) | 83.8% | 66.7% | Orphaned job requeuing, stale processing reconciliations |
+| **Requeue & Crash Recovery** (`requeueService.ts`) | 100% | 96.4% | Orphaned job requeuing, stale processing reconciliations, P2021 error safety |
+| **Email Worker Processor** (`emailWorker.ts`) | 87.8% | 84.1% | Atomic SQL claims, SMTP fallback simulation, moveToDelayed handling, retry exhaustion |
 | **Input Validator** (`scheduleValidator.ts`) | 100% | 100% | Bounds checking, recipient limits, RFC 5322 validation |
 | **Email Queue Initialization** (`emailQueue.ts`) | 100% | 100% | BullMQ connection and queue options |
 | **Database Transaction Ingestion** (`emailRepository.ts`) | 57.1% | 87.5% | Chunked batch creation, bulk updates |
-| **Overall Backend Codebase** | **61.5%** | **64.0%** | Full backend source files (excluding scripts/entrypoints) |
+| **Overall Backend Codebase** | **62.8%** | **71.6%** | Full backend source files (excluding scripts/entrypoints) |
 
 ---
 
@@ -315,6 +315,7 @@ Ethereal is a fake SMTP service used for development and testing. Outbound messa
 | `POST` | `/api/emails/schedule` | Schedules a new email batch | Yes | Body: `{ subject, body, recipients, startAt, delayMs, hourlyLimit }` |
 | `GET` | `/api/emails/scheduled` | Returns scheduled and processing emails | Yes | Query: `limit`, `offset` |
 | `GET` | `/api/emails/sent` | Returns sent and failed emails | Yes | Query: `limit`, `offset` |
+| `GET` | `/api/emails/stats` | Returns real-time BullMQ queue metrics (delayed, active, completed, failed) | Yes | None |
 
 ---
 

@@ -324,4 +324,29 @@ describe('Critical Failure, Concurrency, and Recovery Scenarios', () => {
       data: expect.objectContaining({ status: 'scheduled', enqueuedAt: null, processingStartedAt: null }),
     });
   });
+
+  it('Scenario 9: Startup recovery returns aggregate count and handles P2021 table missing gracefully', async () => {
+    const { runStartupRecovery, recoverStaleProcessingEmails, requeueOrphanedEmails } = await import(
+      '../services/requeueService.js'
+    );
+
+    // Test P2021 error handling (tables not created yet on initial boot)
+    vi.spyOn(prisma.email, 'findMany').mockRejectedValue({ code: 'P2021' });
+
+    const staleResult = await recoverStaleProcessingEmails();
+    const orphanResult = await requeueOrphanedEmails();
+
+    expect(staleResult).toBe(0);
+    expect(orphanResult).toBe(0);
+
+    // Test normal startup recovery
+    vi.spyOn(prisma.email, 'findMany').mockResolvedValue([]);
+    const summary = await runStartupRecovery();
+    expect(summary).toEqual({ staleRecovered: 0, orphanedRequeued: 0 });
+
+    // Test non-P2021 errors are propagated
+    vi.spyOn(prisma.email, 'findMany').mockRejectedValue(new Error('Fatal DB connection error'));
+    await expect(recoverStaleProcessingEmails()).rejects.toThrow('Fatal DB connection error');
+    await expect(requeueOrphanedEmails()).rejects.toThrow('Fatal DB connection error');
+  });
 });

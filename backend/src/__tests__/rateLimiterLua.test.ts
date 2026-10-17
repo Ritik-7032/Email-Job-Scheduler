@@ -19,6 +19,13 @@ describe('Atomic Rate Limiter and Sender Gap Gate', () => {
     expect(msToNextHour).toBe(2670000);
   });
 
+  it('adds jitter to msToNextHour to eliminate thundering herd retry waves', () => {
+    const fixedDate = new Date('2026-09-24T14:15:30.000Z');
+    const { msToNextHour } = getUtcHourWindow(fixedDate, 750);
+
+    expect(msToNextHour).toBe(2670750);
+  });
+
   it('allows send when within gap and hourly limits', async () => {
     vi.spyOn(redis, 'eval').mockResolvedValue(0);
 

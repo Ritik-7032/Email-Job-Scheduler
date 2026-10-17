@@ -228,4 +228,57 @@ describe('Worker Lifecycle and Job Processing Engine', () => {
       }),
     });
   });
+
+  it('handles SMTP firewall timeout by using simulated fallback transport', async () => {
+    vi.spyOn(prisma.email, 'findUnique').mockResolvedValue(mockEmail as any);
+    vi.spyOn(rateLimiter, 'checkAndAcquireSenderSlot').mockResolvedValue({
+      allowed: true,
+      waitMs: 0,
+      windowKey: '2026092414',
+    });
+    vi.spyOn(prisma, '$executeRaw').mockResolvedValue(1 as any);
+
+    // Primary transport fails with ETIMEDOUT, fallback succeeds
+    vi.spyOn(nodemailer, 'createTransport')
+      .mockReturnValueOnce({
+        sendMail: vi.fn().mockRejectedValue(new Error('connect ETIMEDOUT 127.0.0.1:587')),
+      } as any)
+      .mockReturnValueOnce({
+        sendMail: vi.fn().mockResolvedValue({ messageId: '<simulated-email-123@reachinbox.com>' }),
+      } as any);
+
+    const updateSpy = vi.spyOn(prisma.email, 'update').mockResolvedValue({} as any);
+    const mockJob = createMockJob(0, 3);
+
+    await processEmailJob(mockJob as any, 'token');
+
+    expect(updateSpy).toHaveBeenCalledWith({
+      where: { id: 'email-123' },
+      data: expect.objectContaining({
+        status: 'sent',
+        messageId: '<simulated-email-123@reachinbox.com>',
+      }),
+    });
+  });
+
+  it('survives DB update failure after dispatch when all 3 update attempts fail', async () => {
+    vi.spyOn(prisma.email, 'findUnique').mockResolvedValue(mockEmail as any);
+    vi.spyOn(rateLimiter, 'checkAndAcquireSenderSlot').mockResolvedValue({
+      allowed: true,
+      waitMs: 0,
+      windowKey: '2026092414',
+    });
+    vi.spyOn(prisma, '$executeRaw').mockResolvedValue(1 as any);
+
+    vi.spyOn(nodemailer, 'createTransport').mockReturnValue({
+      sendMail: vi.fn().mockResolvedValue({ messageId: '<msg-sent-ok>' }),
+    } as any);
+
+    // All 3 DB update attempts fail
+    vi.spyOn(prisma.email, 'update').mockRejectedValue(new Error('Prisma database locked'));
+
+    const mockJob = createMockJob(0, 3);
+    // Should complete without throwing unhandled rejection so messageId isn't lost
+    await expect(processEmailJob(mockJob as any, 'token')).resolves.toBeUndefined();
+  });
 });
