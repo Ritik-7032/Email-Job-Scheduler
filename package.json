@@ -1,8 +1,8 @@
 {
-  "name": "reachinbox-scheduler-root",
+  "name": "email-job-scheduler",
   "version": "1.0.0",
   "private": true,
-  "description": "Full-Stack Email Job Scheduler for ReachInbox.ai",
+  "description": "Production-grade, distributed background email scheduling and rate-limiting engine",
   "scripts": {
     "dev": "npm --prefix backend run dev",
     "worker": "npm --prefix backend run worker",
