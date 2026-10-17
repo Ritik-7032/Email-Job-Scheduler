@@ -67,6 +67,7 @@ services:
       - WORKER_CONCURRENCY=5
       - MIN_DELAY_BETWEEN_EMAILS_MS=2000
       - MAX_EMAILS_PER_HOUR=200
+      - SEPARATE_WORKER=true
     depends_on:
       postgres:
         condition: service_healthy

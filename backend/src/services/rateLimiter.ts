@@ -30,7 +30,10 @@ end
 return 0
 `;
 
-export function getUtcHourWindow(date = new Date()): { windowKey: string; msToNextHour: number } {
+export function getUtcHourWindow(
+  date = new Date(),
+  jitterMs: number = 0
+): { windowKey: string; msToNextHour: number } {
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');
   const day = String(date.getUTCDate()).padStart(2, '0');
@@ -38,7 +41,8 @@ export function getUtcHourWindow(date = new Date()): { windowKey: string; msToNe
   const windowKey = `${year}${month}${day}${hour}`;
 
   const nextHour = new Date(Date.UTC(year, date.getUTCMonth(), date.getUTCDate(), date.getUTCHours() + 1, 0, 0, 0));
-  const msToNextHour = Math.max(1000, nextHour.getTime() - date.getTime());
+  // Add jitter to msToNextHour to prevent thundering herd when delayed jobs wake up across workers
+  const msToNextHour = Math.max(1000, nextHour.getTime() - date.getTime() + jitterMs);
 
   return { windowKey, msToNextHour };
 }
@@ -49,7 +53,9 @@ export async function checkAndAcquireSenderSlot(
   hourlyLimit: number
 ): Promise<{ allowed: boolean; waitMs: number; windowKey: string }> {
   const now = new Date();
-  const { windowKey, msToNextHour } = getUtcHourWindow(now);
+  // Randomized 0-1500ms jitter desynchronizes worker retry waves at the UTC hour boundary
+  const jitterMs = Math.floor(Math.random() * 1500);
+  const { windowKey, msToNextHour } = getUtcHourWindow(now, jitterMs);
 
   const gapKey = `gap:${senderId}`;
   const rateKey = `rate:${senderId}:${windowKey}`;

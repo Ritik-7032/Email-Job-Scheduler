@@ -12,13 +12,21 @@ async function bootstrap() {
     logger.info({ port: env.PORT, nodeEnv: env.NODE_ENV }, `Server running at http://localhost:${env.PORT}`);
   });
 
-  // Initialize worker & recovery asynchronously after HTTP server binding
+  // In separate-worker deployments (e.g., Docker Compose, multi-container production),
+  // the worker runs via worker.ts. For single-container environments (e.g., free-tier Render),
+  // the worker can run in-process when SEPARATE_WORKER is not set.
+  const isSeparateWorker = process.env.SEPARATE_WORKER === 'true';
+
   setTimeout(() => {
-    try {
-      createEmailWorker();
-      logger.info({ concurrency: env.WORKER_CONCURRENCY }, 'Background queue worker running in server process');
-    } catch (err) {
-      logger.warn({ err }, 'Worker initialization deferred');
+    if (!isSeparateWorker) {
+      try {
+        createEmailWorker();
+        logger.info({ concurrency: env.WORKER_CONCURRENCY }, 'In-process queue worker running');
+      } catch (err) {
+        logger.warn({ err }, 'Worker initialization deferred');
+      }
+    } else {
+      logger.info('API server running with decoupled worker process (SEPARATE_WORKER=true)');
     }
 
     runStartupRecovery()

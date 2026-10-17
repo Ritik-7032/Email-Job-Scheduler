@@ -9,6 +9,8 @@ import {
   listScheduledEmails,
   listSentEmails,
 } from '../services/emailService.js';
+import { emailQueue } from '../queue/emailQueue.js';
+import { env } from '../config/env.js';
 
 export async function handleScheduleEmails(
   req: AuthenticatedRequest,
@@ -57,3 +59,31 @@ export async function handleGetSentEmails(
     next(err);
   }
 }
+
+export async function handleGetQueueStats(
+  _req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const counts = await emailQueue.getJobCounts(
+      'waiting',
+      'active',
+      'completed',
+      'failed',
+      'delayed',
+      'paused'
+    );
+    res.json({
+      status: 'healthy',
+      concurrency: env.WORKER_CONCURRENCY,
+      minDelayMs: env.MIN_DELAY_BETWEEN_EMAILS_MS,
+      maxEmailsPerHour: env.MAX_EMAILS_PER_HOUR,
+      queue: counts,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+
