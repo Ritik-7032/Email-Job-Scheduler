@@ -48,12 +48,39 @@ export const AppContent: React.FC = () => {
     }
   };
 
+  const [isSlowLoad, setIsSlowLoad] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    let interval: ReturnType<typeof setInterval>;
+    if (isLoading) {
+      timer = setTimeout(() => setIsSlowLoad(true), 3000);
+      interval = setInterval(() => {
+        setElapsedSeconds((prev) => prev + 1);
+      }, 1000);
+    }
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
+  }, [isLoading]);
+
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-2">
-          <div className="w-8 h-8 rounded-full border-2 border-slate-900 border-t-transparent animate-spin" />
-          <p className="text-xs text-slate-500 font-medium">Authenticating...</p>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-4 max-w-sm text-center">
+          <div className="w-9 h-9 rounded-full border-2 border-slate-900 border-t-transparent animate-spin" />
+          <div className="space-y-1">
+            <p className="text-sm text-slate-800 font-semibold">
+              {isSlowLoad ? 'Waking up backend server...' : 'Authenticating...'}
+            </p>
+            {isSlowLoad && (
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Free-tier cloud hosting (Render) sleeps after 15 minutes of inactivity. Initial wake-up takes ~30–45s ({elapsedSeconds}s elapsed).
+              </p>
+            )}
+          </div>
         </div>
       </div>
     );
