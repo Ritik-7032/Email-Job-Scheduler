@@ -1,7 +1,7 @@
 # Email Job Scheduler
 
 [![CI](https://github.com/Ritik-7032/Email-Job-Scheduler/actions/workflows/ci.yml/badge.svg)](https://github.com/Ritik-7032/Email-Job-Scheduler/actions/workflows/ci.yml)
-![Test Suite](https://img.shields.io/badge/Vitest-34%2F34%20Passed-brightgreen)
+![Test Suite](https://img.shields.io/badge/Vitest-35%2F35%20Passed-brightgreen)
 ![Core Engine Coverage](https://img.shields.io/badge/Core%20Engine%20Coverage-90%25%2B-brightgreen)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)
 ![Node](https://img.shields.io/badge/Node.js-%3E%3D20-green)

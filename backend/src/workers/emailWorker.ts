@@ -117,6 +117,14 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
     const isSafeUrl = (url: string) =>
       /^(https?:\/\/|data:image\/(png|jpe?g|gif|webp);base64,)/i.test(url.trim());
 
+    const escapeHtmlAttr = (str: string) =>
+      str
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
     const formatBodyToHtml = (content: string) => {
       let html = content
         .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
@@ -126,15 +134,15 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
           /!\[(.*?)\]\((.*?)\)/g,
           (_match, alt, src) =>
             isSafeUrl(src)
-              ? `<div style="margin: 12px 0;"><img src="${src}" alt="${alt}" style="max-width: 100%; max-height: 400px; border-radius: 12px; display: block;" /></div>`
-              : `<div style="margin: 12px 0;">[Image: ${alt}]</div>`
+              ? `<div style="margin: 12px 0;"><img src="${escapeHtmlAttr(src)}" alt="${escapeHtmlAttr(alt)}" style="max-width: 100%; max-height: 400px; border-radius: 12px; display: block;" /></div>`
+              : `<div style="margin: 12px 0;">[Image: ${escapeHtmlAttr(alt)}]</div>`
         )
         .replace(
           /📎\s*\[Attachment:\s*(.*?)\]\((.*?)\)/g,
           (_match, name, href) =>
             isSafeUrl(href)
-              ? `<div style="margin: 8px 0;"><a href="${href}" download="${name}" style="display:inline-block; padding:8px 14px; background:#f4f6f5; border:1px solid #e0e0e0; border-radius:8px; text-decoration:none; color:#1a1a1a; font-family:sans-serif; font-size:12px; font-weight:600;">📎 ${name}</a></div>`
-              : `<div style="margin: 8px 0;">📎 ${name}</div>`
+              ? `<div style="margin: 8px 0;"><a href="${escapeHtmlAttr(href)}" download="${escapeHtmlAttr(name)}" style="display:inline-block; padding:8px 14px; background:#f4f6f5; border:1px solid #e0e0e0; border-radius:8px; text-decoration:none; color:#1a1a1a; font-family:sans-serif; font-size:12px; font-weight:600;">📎 ${escapeHtmlAttr(name)}</a></div>`
+              : `<div style="margin: 8px 0;">📎 ${escapeHtmlAttr(name)}</div>`
         );
 
       if (!/<[a-z][\s\S]*>/i.test(content)) {

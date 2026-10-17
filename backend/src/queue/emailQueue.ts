@@ -13,12 +13,9 @@ export const emailQueue = new Queue<ScheduleJobData>(EMAIL_QUEUE_NAME, {
       type: 'exponential',
       delay: 5000,
     },
-    // Clean up completed jobs immediately to eliminate jobId collision risks on reconciler recovery
+    // Clean up completed and failed jobs from BullMQ to eliminate jobId collisions on recovery
     removeOnComplete: true,
-    removeOnFail: {
-      count: 500,
-      age: 86400,
-    },
+    removeOnFail: true,
   },
 });
 

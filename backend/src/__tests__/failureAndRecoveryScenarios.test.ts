@@ -274,20 +274,11 @@ describe('Critical Failure, Concurrency, and Recovery Scenarios', () => {
     expect(updateManySpy).toHaveBeenCalledTimes(3);
   });
 
-  it('Scenario 8: Stale processing recovery marks dispatched emails as sent and resets recoverable crashes', async () => {
-    const staleSentEmail = {
-      id: 'stale-sent-1',
-      status: EmailStatus.processing,
-      processingStartedAt: new Date(Date.now() - 600000),
-      messageId: '<smtp-msg-delivered@ethereal.email>',
-      attempts: 1,
-    };
-
+  it('Scenario 8: Stale processing recovery fails exhausted jobs and resets recoverable crashes for at-least-once delivery', async () => {
     const staleMaxAttemptsEmail = {
       id: 'stale-exhausted-2',
       status: EmailStatus.processing,
       processingStartedAt: new Date(Date.now() - 600000),
-      messageId: null,
       attempts: 3,
     };
 
@@ -295,12 +286,10 @@ describe('Critical Failure, Concurrency, and Recovery Scenarios', () => {
       id: 'stale-retry-3',
       status: EmailStatus.processing,
       processingStartedAt: new Date(Date.now() - 600000),
-      messageId: null,
       attempts: 1,
     };
 
     vi.spyOn(prisma.email, 'findMany').mockResolvedValueOnce([
-      staleSentEmail,
       staleMaxAttemptsEmail,
       staleRecoverableEmail,
     ] as any);
@@ -310,11 +299,7 @@ describe('Critical Failure, Concurrency, and Recovery Scenarios', () => {
     const { recoverStaleProcessingEmails } = await import('../services/requeueService.js');
     const recoveredCount = await recoverStaleProcessingEmails(300000);
 
-    expect(recoveredCount).toBe(3);
-    expect(updateSpy).toHaveBeenCalledWith({
-      where: { id: 'stale-sent-1' },
-      data: expect.objectContaining({ status: 'sent' }),
-    });
+    expect(recoveredCount).toBe(2);
     expect(updateSpy).toHaveBeenCalledWith({
       where: { id: 'stale-exhausted-2' },
       data: expect.objectContaining({ status: 'failed' }),

@@ -39,17 +39,8 @@ export async function recoverStaleProcessingEmails(
     }
 
     for (const email of staleEmails) {
-      // If messageId exists, SMTP dispatch succeeded before DB update or worker termination
-      if (email.messageId) {
-        await prisma.email.update({
-          where: { id: email.id },
-          data: {
-            status: 'sent',
-            sentAt: email.processingStartedAt || new Date(),
-          },
-        });
-      } else if (email.attempts >= 3) {
-        // Attempts exhausted on stalled worker
+      if (email.attempts >= 3) {
+        // Maximum attempts exhausted on stalled worker
         await prisma.email.update({
           where: { id: email.id },
           data: {
@@ -58,7 +49,7 @@ export async function recoverStaleProcessingEmails(
           },
         });
       } else {
-        // Reset to scheduled so it can be picked up and safely retried
+        // Reset to scheduled for at-least-once delivery recovery
         await prisma.email.update({
           where: { id: email.id },
           data: {
