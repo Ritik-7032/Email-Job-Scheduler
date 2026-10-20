@@ -11,11 +11,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const rawApiBase = import.meta.env.VITE_API_URL || '';
-  const apiBase = (
-    rawApiBase && !rawApiBase.includes('reachinbox-scheduler-backend')
-      ? rawApiBase
-      : 'https://email-job-scheduler-mtxd.onrender.com'
-  ).replace(/\/+$/, '');
+  const apiBase = (rawApiBase || 'https://email-job-scheduler-mtxd.onrender.com').replace(/\/+$/, '');
   const googleAuthUrl = `${apiBase}/api/auth/google`;
 
   const handleDemoLogin = async () => {

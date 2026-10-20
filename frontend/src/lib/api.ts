@@ -10,12 +10,12 @@ import {
 class ApiClient {
   private getBaseUrl(): string {
     const envUrl = import.meta.env.VITE_API_URL;
-    if (envUrl && !envUrl.includes('reachinbox-scheduler-backend')) {
+    if (envUrl) {
       return envUrl.replace(/\/+$/, '');
     }
     if (
       typeof window !== 'undefined' &&
-      (window.location.hostname.includes('vercel.app') || !envUrl || envUrl.includes('reachinbox-scheduler-backend'))
+      window.location.hostname.includes('vercel.app')
     ) {
       return 'https://email-job-scheduler-mtxd.onrender.com';
     }
@@ -23,7 +23,7 @@ class ApiClient {
   }
 
   getToken(): string | null {
-    return localStorage.getItem('email_scheduler_auth_token') || localStorage.getItem('reachinbox_auth_token');
+    return localStorage.getItem('email_scheduler_auth_token');
   }
 
   setToken(token: string): void {
@@ -32,7 +32,6 @@ class ApiClient {
 
   clearToken(): void {
     localStorage.removeItem('email_scheduler_auth_token');
-    localStorage.removeItem('reachinbox_auth_token');
   }
 
   private async request<T>(
