@@ -13,7 +13,7 @@ A production-grade, distributed background email scheduling and rate-limiting en
 
 ## 🌐 Live Deployments
 
-- 🚀 **Frontend Web Application (Vercel)**: [https://email-job-scheduler-alpha.vercel.app](https://email-job-scheduler-alpha.vercel.app)
+- 🚀 **Frontend Web Application (Vercel)**: [https://email-job-scheduler-xdo2.vercel.app](https://email-job-scheduler-xdo2.vercel.app)
 - ⚙️ **Backend API & Queue Worker (Render)**: [https://email-job-scheduler-mtxd.onrender.com](https://email-job-scheduler-mtxd.onrender.com)
 - 📦 **GitHub Repository**: [https://github.com/Ritik-7032/Email-Job-Scheduler](https://github.com/Ritik-7032/Email-Job-Scheduler)
 
