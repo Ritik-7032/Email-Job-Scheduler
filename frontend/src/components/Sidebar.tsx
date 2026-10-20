@@ -142,7 +142,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       <div className="text-[10px] text-slate-400 text-center pb-2">
-        ReachInbox Scheduler
+        Email Job Scheduler v1.0
       </div>
     </aside>
   );

@@ -145,9 +145,13 @@ export const ReviewSubmitAction: React.FC<ReviewSubmitActionProps> = ({
             type="button"
             onClick={onSubmit}
             disabled={isSubmitting}
-            className="border border-[#00a843] text-[#00a843] hover:bg-[#e8f5e9]/80 active:bg-[#e8f5e9] rounded-full px-5 py-1 text-sm font-medium transition-all disabled:opacity-50"
+            className="bg-[#00a843] hover:bg-[#00923a] text-white rounded-full px-5 py-1.5 text-sm font-medium transition-all disabled:opacity-50 shadow-sm"
           >
-            {isSubmitting ? 'Scheduling...' : 'Send Later'}
+            {isSubmitting
+              ? 'Sending...'
+              : selectedPresetLabel
+              ? `Schedule (${selectedPresetLabel})`
+              : 'Send Campaign'}
           </button>
         </div>
       </div>

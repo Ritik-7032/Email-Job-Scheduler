@@ -11,7 +11,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string().default(
     process.env.NODE_ENV === 'test'
       ? 'postgresql://mock:mock@localhost:5432/mock_db?schema=public'
-      : 'postgresql://reachinbox:reachinbox_password@localhost:5432/reachinbox_scheduler?schema=public'
+      : 'postgresql://scheduler_admin:scheduler_password@localhost:5432/scheduler_db?schema=public'
   ),
   REDIS_URL: z.string().default('redis://localhost:6379'),
 
@@ -32,6 +32,7 @@ const envSchema = z.object({
   DEFAULT_HOURLY_LIMIT: z.coerce.number().min(1).default(200),
   MAX_RECIPIENTS_PER_REQUEST: z.coerce.number().min(1).default(10000),
   STALE_PROCESSING_MS: z.coerce.number().min(1000).default(300000),
+  SEPARATE_WORKER: z.preprocess((val) => val === 'true' || val === true, z.boolean()).default(false),
   DEMO_SIMULATE_SMTP: z.preprocess((val) => val === 'true' || val === true, z.boolean()).default(false),
 });
 

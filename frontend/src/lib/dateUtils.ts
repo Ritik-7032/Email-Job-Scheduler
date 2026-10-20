@@ -35,8 +35,8 @@ export function formatScheduledTimePill(dateStr: string | null | undefined): str
 }
 
 export function getDefaultStartTimeLocal(): string {
-  // Default start time: current time + 5 minutes, formatted for datetime-local
-  const now = new Date(Date.now() + 5 * 60 * 1000);
+  // Default start time: current time + 5 seconds for immediate dispatch
+  const now = new Date(Date.now() + 5 * 1000);
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');

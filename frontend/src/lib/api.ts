@@ -9,18 +9,26 @@ import {
 
 class ApiClient {
   private getBaseUrl(): string {
-    return (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
+    const envUrl = import.meta.env.VITE_API_URL;
+    if (envUrl) {
+      return envUrl.replace(/\/+$/, '');
+    }
+    if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
+      return 'https://email-job-scheduler-mtxd.onrender.com';
+    }
+    return '';
   }
 
   getToken(): string | null {
-    return localStorage.getItem('reachinbox_auth_token');
+    return localStorage.getItem('email_scheduler_auth_token') || localStorage.getItem('reachinbox_auth_token');
   }
 
   setToken(token: string): void {
-    localStorage.setItem('reachinbox_auth_token', token);
+    localStorage.setItem('email_scheduler_auth_token', token);
   }
 
   clearToken(): void {
+    localStorage.removeItem('email_scheduler_auth_token');
     localStorage.removeItem('reachinbox_auth_token');
   }
 

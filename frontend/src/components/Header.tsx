@@ -28,11 +28,11 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-7 h-7 bg-slate-900 rounded flex items-center justify-center text-white font-bold text-xs tracking-wider">
-            RI
+            ES
           </div>
           <div>
             <h1 className="text-sm font-bold text-slate-900 tracking-tight leading-none">
-              ReachInbox Scheduler
+              Email Job Scheduler
             </h1>
           </div>
         </div>

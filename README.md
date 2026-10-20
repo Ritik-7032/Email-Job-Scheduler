@@ -14,7 +14,7 @@ A production-grade, distributed background email scheduling and rate-limiting en
 ## 🌐 Live Deployments
 
 - 🚀 **Frontend Web Application (Vercel)**: [https://email-job-scheduler-alpha.vercel.app](https://email-job-scheduler-alpha.vercel.app)
-- ⚙️ **Backend API & Queue Worker (Render)**: [https://reachinbox-scheduler-backend.onrender.com](https://reachinbox-scheduler-backend.onrender.com)
+- ⚙️ **Backend API & Queue Worker (Render)**: [https://email-job-scheduler-mtxd.onrender.com](https://email-job-scheduler-mtxd.onrender.com)
 - 📦 **GitHub Repository**: [https://github.com/Ritik-7032/Email-Job-Scheduler](https://github.com/Ritik-7032/Email-Job-Scheduler)
 
 ---
@@ -38,6 +38,8 @@ A production-grade, distributed background email scheduling and rate-limiting en
 | Showing 1 - 4 of 100 emails                                                    [< Previous]  [Next >]   |
 +---------------------------------------------------------------------------------------------------------+
 ```
+
+> **Dashboard UI Architecture**: The interface features a sidebar navigation (`Sidebar.tsx`) with real-time status badges (3.5s auto-polling), an interactive email list with instant multi-field search filtering, an email inspection drawer (`EmailDetailView.tsx`) with rendered Markdown/attachments and direct Ethereal preview links, and a campaign composer (`ComposeView.tsx`) with CSV parser and auto-deduplication. A 1-Click Recruiter/Portfolio Demo mode is also provided on the login screen for instant evaluation.
 
 ---
 
@@ -193,7 +195,7 @@ npm --prefix backend run test:coverage
 | **Input Validator** (`scheduleValidator.ts`) | 100% | 100% | Bounds checking, recipient limits, RFC 5322 validation |
 | **Email Queue Initialization** (`emailQueue.ts`) | 100% | 100% | BullMQ connection and queue options |
 | **Database Transaction Ingestion** (`emailRepository.ts`) | 57.1% | 87.5% | Chunked batch creation, bulk updates |
-| **Overall Backend Codebase** | **62.3%** | **72.5%** | Full backend source files (excluding scripts/entrypoints) |
+| **Overall Backend Codebase** | **62.3%** | **70.4%** | Full backend source files (excluding scripts/entrypoints) |
 
 ---
 
@@ -230,9 +232,9 @@ email-job-scheduler/
 │   └── .env.example
 ├── frontend/
 │   ├── src/
-│   │   ├── components/           # Button, Input, Modal, Table, Toast, Header
+│   │   ├── components/           # Button, Input, Header, Toast, Sidebar, EmailDetailView, ComposeView, EmailTable, compose/
 │   │   ├── lib/                  # Typed API client, CSV parser, Date utilities
-│   │   ├── screens/              # Login & Dashboard screens
+│   │   ├── screens/              # Login (with 1-Click Demo) & Dashboard screens
 │   │   ├── types/                # Frontend TypeScript types
 │   │   ├── App.tsx               # App root & Auth container (with cold-start detection)
 │   │   └── main.tsx              # React entrypoint
@@ -261,7 +263,7 @@ cp backend/.env.example backend/.env
 | `NODE_ENV` | Runtime environment (`development`, `production`, `test`) | `development` |
 | `PORT` | API server port | `5000` |
 | `FRONTEND_URL` | Frontend origin for CORS and redirects | `http://localhost:5173` |
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://reachinbox:reachinbox_password@localhost:5432/reachinbox_scheduler?schema=public` |
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql://scheduler_admin:scheduler_password@localhost:5432/scheduler_db?schema=public` |
 | `REDIS_URL` | Redis connection URL | `redis://localhost:6379` |
 | `GOOGLE_CLIENT_ID` | Google Cloud OAuth Client ID | Required |
 | `GOOGLE_CLIENT_SECRET` | Google Cloud OAuth Client Secret | Required |
@@ -312,6 +314,7 @@ Ethereal is a fake SMTP service used for development and testing. Outbound messa
 | `GET` | `/health` | Health check endpoint | No | None |
 | `GET` | `/api/auth/google` | Initiates Google OAuth with state cookie | No | None |
 | `GET` | `/api/auth/callback` | Exchanges code, verifies state, sets JWT cookie | No | Query: `code`, `state` |
+| `POST` | `/api/auth/demo` | Authenticates Demo Recruiter session (1-Click portfolio evaluation) | No | None |
 | `GET` | `/api/auth/me` | Returns current authenticated user profile | Yes | None |
 | `POST` | `/api/auth/logout` | Clears JWT cookie | Yes | None |
 | `POST` | `/api/emails/schedule` | Schedules a new email batch | Yes | Body: `{ subject, body, recipients, startAt, delayMs, hourlyLimit }` |
@@ -405,7 +408,7 @@ The system is architected to handle bulk batches of 1,000+ recipients reliably w
 1. **Google OAuth**: A single verified Google account creates or logs into a user account with signed HTTP-only JWT session cookies.
 2. **Ethereal Test Senders**: Test accounts are generated dynamically on startup/seeding rather than using production SMTP credentials.
 3. **UTC Hourly Windows**: Hourly limits reset at the start of each UTC hour (e.g. `14:00:00 UTC`), rather than on a rolling 60-minute sliding window.
-4. **At-Least-Once Delivery & SMTP Dual-Write Boundary**: Sending an email via SMTP is an external network operation that cannot be joined into an atomic two-phase commit (2PC) with PostgreSQL. Under normal operations, atomic SQL conditional claims prevent duplicate worker processing. If a worker process crashes precisely after SMTP accepts a message but before PostgreSQL commits `status = 'sent'`, the reconciler (`recoverStaleProcessingEmails`) resets uncommitted processing rows to `scheduled` after the 5-minute timeout. This prioritizes **at-least-once delivery** over message loss. To enable downstream Mail Transfer Agents (MTAs) and recipient inboxes to deduplicate any re-delivered message, outbound emails set a deterministic RFC 5322 header: `Message-ID: <${emailId}@reachinbox.scheduler>`.
+4. **At-Least-Once Delivery & SMTP Dual-Write Boundary**: Sending an email via SMTP is an external network operation that cannot be joined into an atomic two-phase commit (2PC) with PostgreSQL. Under normal operations, atomic SQL conditional claims prevent duplicate worker processing. If a worker process crashes precisely after SMTP accepts a message but before PostgreSQL commits `status = 'sent'`, the reconciler (`recoverStaleProcessingEmails`) resets uncommitted processing rows to `scheduled` after the 5-minute timeout. This prioritizes **at-least-once delivery** over message loss. To enable downstream Mail Transfer Agents (MTAs) and recipient inboxes to deduplicate any re-delivered message, outbound emails set a deterministic RFC 5322 header: `Message-ID: <${emailId}@scheduler.internal>`.
 5. **Content Sanitization**: Email bodies support markdown elements (images, attachments, bold, italic, strikethrough). When raw HTML is submitted, an internal sanitizer strips potentially dangerous elements (`<script>`, `<iframe>`, `<object>`, `<embed>`), inline `on*` event handlers, and executable URI protocols (`javascript:`, `data:`).
 
 ---
@@ -450,10 +453,12 @@ The system is architected to handle bulk batches of 1,000+ recipients reliably w
 
 ### Frontend
 - [x] Internal-tool UI design with neutral slate palette and 1px borders.
-- [x] Google Sign-in authentication flow.
+- [x] Google Sign-in authentication flow with HTTP-only session cookies.
+- [x] 1-Click Recruiter/Portfolio Demo login for instant evaluation without OAuth setup.
+- [x] Sidebar navigation with real-time counters and 3.5s auto-polling refresh.
 - [x] Dashboard with Scheduled Emails and Sent Emails tabs.
 - [x] Real API-driven paginated tables with loading, error, and empty states.
-- [x] Direct Ethereal preview links for sent emails.
+- [x] Email inspection drawer (`EmailDetailView`) with Markdown rendering and direct Ethereal preview links.
 - [x] Compose modal with input validation, datetime-local conversion to UTC ISO, and delay/hourly controls.
 - [x] Hand-written CSV/text parser with email regex and deduplication counts.
 - [x] Formatted timestamps in user's local timezone.

@@ -69,11 +69,9 @@ export const ComposeView: React.FC<ComposeViewProps> = ({
       let effectiveStartAtLocal = startAtLocal;
       const parsedStartMs = new Date(effectiveStartAtLocal).getTime();
 
-      if (!hasUserCustomizedTime || isNaN(parsedStartMs) || parsedStartMs <= Date.now() + 10000) {
-        effectiveStartAtLocal = getDefaultStartTimeLocal();
-      }
-
-      const startAtUtc = localDatetimeToUtcIso(effectiveStartAtLocal);
+      const startAtUtc = hasUserCustomizedTime && !isNaN(parsedStartMs) && parsedStartMs > Date.now()
+        ? localDatetimeToUtcIso(effectiveStartAtLocal)
+        : new Date(Date.now() + 5000).toISOString();
 
       const delayNum = parseInt(delayMs, 10);
       const hourlyNum = parseInt(hourlyLimit, 10);

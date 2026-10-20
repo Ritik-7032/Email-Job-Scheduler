@@ -1,34 +1,34 @@
 version: '3.8'
 
-name: reachinbox-scheduler
+name: email-job-scheduler
 
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: reachinbox-postgres
+    container_name: scheduler-postgres
     restart: unless-stopped
     networks:
-      - reachinbox-network
+      - scheduler-network
     environment:
-      POSTGRES_USER: reachinbox
-      POSTGRES_PASSWORD: reachinbox_password
-      POSTGRES_DB: reachinbox_scheduler
+      POSTGRES_USER: scheduler_admin
+      POSTGRES_PASSWORD: scheduler_password
+      POSTGRES_DB: scheduler_db
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U reachinbox -d reachinbox_scheduler"]
+      test: ["CMD-SHELL", "pg_isready -U scheduler_admin -d scheduler_db"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: reachinbox-redis
+    container_name: scheduler-redis
     restart: unless-stopped
     networks:
-      - reachinbox-network
+      - scheduler-network
     command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "6379:6379"
@@ -44,19 +44,19 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: reachinbox-api
+    container_name: scheduler-api
     restart: unless-stopped
     networks:
-      - reachinbox-network
+      - scheduler-network
     ports:
       - "5000:5000"
     environment:
       - NODE_ENV=production
       - PORT=5000
       - FRONTEND_URL=http://localhost:5173
-      - DATABASE_URL=postgresql://reachinbox:reachinbox_password@postgres:5432/reachinbox_scheduler?schema=public
+      - DATABASE_URL=postgresql://scheduler_admin:scheduler_password@postgres:5432/scheduler_db?schema=public
       - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=super-secret-reachinbox-scheduler-jwt-secret-key-32-chars
+      - JWT_SECRET=super-secret-email-job-scheduler-jwt-secret-key-32-chars
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-your-google-client-id.apps.googleusercontent.com}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-your-google-client-secret}
       - GOOGLE_CALLBACK_URL=http://localhost:5000/api/auth/callback
@@ -78,16 +78,16 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: reachinbox-worker
+    container_name: scheduler-worker
     restart: unless-stopped
     networks:
-      - reachinbox-network
+      - scheduler-network
     command: ["node", "dist/worker.js"]
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://reachinbox:reachinbox_password@postgres:5432/reachinbox_scheduler?schema=public
+      - DATABASE_URL=postgresql://scheduler_admin:scheduler_password@postgres:5432/scheduler_db?schema=public
       - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=super-secret-reachinbox-scheduler-jwt-secret-key-32-chars
+      - JWT_SECRET=super-secret-email-job-scheduler-jwt-secret-key-32-chars
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-your-google-client-id.apps.googleusercontent.com}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-your-google-client-secret}
       - SMTP_HOST=smtp.ethereal.email
@@ -109,10 +109,10 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: reachinbox-frontend
+    container_name: scheduler-frontend
     restart: unless-stopped
     networks:
-      - reachinbox-network
+      - scheduler-network
     ports:
       - "5173:5173"
     depends_on:
@@ -120,10 +120,10 @@ services:
 
 volumes:
   postgres_data:
-    name: reachinbox_postgres_data
+    name: scheduler_postgres_data
   redis_data:
-    name: reachinbox_redis_data
+    name: scheduler_redis_data
 
 networks:
-  reachinbox-network:
-    name: reachinbox-scheduler-net
+  scheduler-network:
+    name: scheduler-net

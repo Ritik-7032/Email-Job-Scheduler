@@ -15,7 +15,7 @@ async function bootstrap() {
   // In separate-worker deployments (e.g., Docker Compose, multi-container production),
   // the worker runs via worker.ts. For single-container environments (e.g., free-tier Render),
   // the worker can run in-process when SEPARATE_WORKER is not set.
-  const isSeparateWorker = process.env.SEPARATE_WORKER === 'true';
+  const isSeparateWorker = env.SEPARATE_WORKER;
 
   // setImmediate ensures the HTTP listener port binds on tick 0 so cloud platform
   // health-checks pass instantly before queue worker and DB reconciler bootstrap.

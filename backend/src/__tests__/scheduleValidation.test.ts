@@ -8,7 +8,7 @@ import { prisma } from '../lib/prisma.js';
 describe('Schedule API Request Validation and Authentication', () => {
   const validUser = {
     id: 'user-test-123',
-    email: 'test@reachinbox.ai',
+    email: 'test@scheduler.internal',
     name: 'Test User',
     avatar: null,
   };

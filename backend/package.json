@@ -2,6 +2,7 @@
   "name": "email-job-scheduler-backend",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",

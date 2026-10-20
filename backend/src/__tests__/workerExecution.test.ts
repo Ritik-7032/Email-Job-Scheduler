@@ -275,7 +275,7 @@ describe('Worker Lifecycle and Job Processing Engine', () => {
         sendMail: vi.fn().mockRejectedValue(new Error('connect ETIMEDOUT 127.0.0.1:587')),
       } as any)
       .mockReturnValueOnce({
-        sendMail: vi.fn().mockResolvedValue({ messageId: '<email-123@reachinbox.scheduler>' }),
+        sendMail: vi.fn().mockResolvedValue({ messageId: '<email-123@scheduler.internal>' }),
       } as any);
 
     const updateSpy = vi.spyOn(prisma.email, 'update').mockResolvedValue({} as any);
@@ -287,7 +287,7 @@ describe('Worker Lifecycle and Job Processing Engine', () => {
       where: { id: 'email-123' },
       data: expect.objectContaining({
         status: 'sent',
-        messageId: '<email-123@reachinbox.scheduler>',
+        messageId: '<email-123@scheduler.internal>',
       }),
     });
     delete process.env.DEMO_SIMULATE_SMTP;

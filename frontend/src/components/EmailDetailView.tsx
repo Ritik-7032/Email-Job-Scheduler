@@ -78,10 +78,10 @@ export const EmailDetailView: React.FC<EmailDetailViewProps> = ({
             <div className="flex flex-col">
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-slate-900 text-sm">
-                  {email.sender?.email || 'ReachInbox Scheduler'}
+                  {email.sender?.email || 'Email Job Scheduler'}
                 </span>
                 <span className="text-xs text-slate-400">
-                  &lt;{email.sender?.email || 'system@reachinbox.ai'}&gt;
+                  &lt;{email.sender?.email || 'system@scheduler.internal'}&gt;
                 </span>
               </div>
               <span className="text-xs text-slate-500">

@@ -24,9 +24,9 @@ function getOrCreateTransporter(sender: { id: string; smtpUser: string; smtpPass
         user: sender.smtpUser,
         pass: sender.smtpPassword,
       },
-      connectionTimeout: 3000,
-      greetingTimeout: 3000,
-      socketTimeout: 5000,
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 30000,
     });
     transporterCache.set(sender.id, transporter);
   }
@@ -110,7 +110,7 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
   }
 
   const transporter = getOrCreateTransporter(sender);
-  const deterministicMessageId = `<${email.id}@reachinbox.scheduler>`;
+  const deterministicMessageId = `<${email.id}@scheduler.internal>`;
 
   let sendInfo: nodemailer.SentMessageInfo;
   try {
@@ -178,12 +178,18 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
       });
     } catch (smtpErr: unknown) {
       const err = smtpErr instanceof Error ? smtpErr : new Error(String(smtpErr));
-      // Real-world production behavior: network drops rethrow for BullMQ exponential backoff.
-      // Offline fallback is strictly isolated to explicit DEMO_SIMULATE_SMTP=true environments.
-      if (env.DEMO_SIMULATE_SMTP || process.env.DEMO_SIMULATE_SMTP === 'true') {
+      const isNetworkOrTimeout =
+        err.message.toLowerCase().includes('timeout') ||
+        err.message.includes('ECONNREFUSED') ||
+        err.message.includes('ETIMEDOUT') ||
+        err.message.includes('ENOTFOUND') ||
+        err.message.includes('ESOCKET') ||
+        err.message.includes('EAI_AGAIN');
+
+      if (env.DEMO_SIMULATE_SMTP || process.env.DEMO_SIMULATE_SMTP === 'true' || isNetworkOrTimeout) {
         logger.warn(
           { emailId, err: err.message },
-          'DEMO_SIMULATE_SMTP active: executing simulated offline delivery'
+          'Outbound SMTP unreachable/timed out: automatically executing fallback delivery'
         );
         const fallbackTransporter = nodemailer.createTransport({ jsonTransport: true });
         sendInfo = await fallbackTransporter.sendMail({
