@@ -155,6 +155,11 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
               ? `<div style="margin: 8px 0;"><a href="${escapeHtmlAttr(href)}" download="${escapeHtmlAttr(name)}" style="display:inline-block; padding:8px 14px; background:#f4f6f5; border:1px solid #e0e0e0; border-radius:8px; text-decoration:none; color:#1a1a1a; font-family:sans-serif; font-size:12px; font-weight:600;">📎 ${escapeHtmlAttr(name)}</a></div>`
               : `<div style="margin: 8px 0;">📎 ${escapeHtmlAttr(name)}</div>`
         )
+        .replace(
+          /📎\s*\[Attachment:\s*(.*?)\]/g,
+          (_match, name) =>
+            `<div style="margin: 8px 0;"><span style="display:inline-block; padding:8px 14px; background:#f4f6f5; border:1px solid #e0e0e0; border-radius:8px; color:#1a1a1a; font-family:sans-serif; font-size:12px; font-weight:600;">📎 ${escapeHtmlAttr(name)}</span></div>`
+        )
         .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
         .replace(/\*(.*?)\*/g, '<i>$1</i>')
         .replace(/~~(.*?)~~/g, '<s>$1</s>');
@@ -186,13 +191,19 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
       }
     }
 
+    // Strip massive base64 payload from delivered body so email body stays lightweight and clean
+    const cleanBodyForDelivery = email.body.replace(
+      /📎\s*\[Attachment:\s*(.*?)\]\(data:[^)]+\)/g,
+      '📎 [Attachment: $1 (attached)]'
+    );
+
     try {
       sendInfo = await transporter.sendMail({
         from: `"${sender.email}" <${sender.email}>`,
         to: email.recipient,
         subject: email.subject,
-        text: email.body,
-        html: formatBodyToHtml(email.body),
+        text: cleanBodyForDelivery,
+        html: formatBodyToHtml(cleanBodyForDelivery),
         messageId: deterministicMessageId,
         attachments: mimeAttachments.length > 0 ? mimeAttachments : undefined,
       });

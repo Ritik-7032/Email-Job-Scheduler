@@ -113,7 +113,6 @@ export async function handleDemoLogin(
 
     res.json({
       success: true,
-      token,
       user,
     });
   } catch (err) {

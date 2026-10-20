@@ -56,7 +56,7 @@ services:
       - FRONTEND_URL=http://localhost:5173
       - DATABASE_URL=postgresql://scheduler_admin:scheduler_password@postgres:5432/scheduler_db?schema=public
       - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=super-secret-email-job-scheduler-jwt-secret-key-32-chars
+      - JWT_SECRET=${JWT_SECRET:-super-secret-email-job-scheduler-jwt-secret-key-32-chars}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-your-google-client-id.apps.googleusercontent.com}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-your-google-client-secret}
       - GOOGLE_CALLBACK_URL=http://localhost:5000/api/auth/callback
@@ -87,7 +87,7 @@ services:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://scheduler_admin:scheduler_password@postgres:5432/scheduler_db?schema=public
       - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=super-secret-email-job-scheduler-jwt-secret-key-32-chars
+      - JWT_SECRET=${JWT_SECRET:-super-secret-email-job-scheduler-jwt-secret-key-32-chars}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-your-google-client-id.apps.googleusercontent.com}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-your-google-client-secret}
       - SMTP_HOST=smtp.ethereal.email
