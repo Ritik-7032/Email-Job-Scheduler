@@ -10,11 +10,11 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   const [isDemoLoading, setIsDemoLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const rawApiBase = import.meta.env.VITE_API_URL || '';
   const apiBase = (
-    import.meta.env.VITE_API_URL ||
-    (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')
-      ? 'https://email-job-scheduler-mtxd.onrender.com'
-      : '')
+    rawApiBase && !rawApiBase.includes('reachinbox-scheduler-backend')
+      ? rawApiBase
+      : 'https://email-job-scheduler-mtxd.onrender.com'
   ).replace(/\/+$/, '');
   const googleAuthUrl = `${apiBase}/api/auth/google`;
 

@@ -10,10 +10,13 @@ import {
 class ApiClient {
   private getBaseUrl(): string {
     const envUrl = import.meta.env.VITE_API_URL;
-    if (envUrl) {
+    if (envUrl && !envUrl.includes('reachinbox-scheduler-backend')) {
       return envUrl.replace(/\/+$/, '');
     }
-    if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
+    if (
+      typeof window !== 'undefined' &&
+      (window.location.hostname.includes('vercel.app') || !envUrl || envUrl.includes('reachinbox-scheduler-backend'))
+    ) {
       return 'https://email-job-scheduler-mtxd.onrender.com';
     }
     return '';
