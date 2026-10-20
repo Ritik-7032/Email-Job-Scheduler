@@ -191,11 +191,11 @@ npm --prefix backend run test:coverage
 | :--- | :---: | :---: | :--- |
 | **Rate Limiter Lua Script** (`rateLimiter.ts`) | 100% | 100% | Atomic gap TTL checks, UTC hourly resets, slot reservations |
 | **Requeue & Crash Recovery** (`requeueService.ts`) | 100% | 100% | Orphaned job requeuing, stale processing reconciliations, P2021 error safety |
-| **Email Worker Processor** (`emailWorker.ts`) | 84.0% | 86.0% | Atomic SQL claims, moveToDelayed handling, retry exhaustion, HTML/XSS sanitization |
+| **Email Worker Processor** (`emailWorker.ts`) | 83.7% | 82.4% | Atomic SQL claims, moveToDelayed handling, retry exhaustion, HTML/XSS sanitization |
 | **Input Validator** (`scheduleValidator.ts`) | 100% | 100% | Bounds checking, recipient limits, RFC 5322 validation |
 | **Email Queue Initialization** (`emailQueue.ts`) | 100% | 100% | BullMQ connection and queue options |
 | **Database Transaction Ingestion** (`emailRepository.ts`) | 57.1% | 87.5% | Chunked batch creation, bulk updates |
-| **Overall Backend Codebase** | **62.3%** | **70.4%** | Full backend source files (excluding scripts/entrypoints) |
+| **Overall Backend Codebase** | **62.4%** | **69.7%** | Full backend source files (excluding scripts/entrypoints) |
 
 ---
 

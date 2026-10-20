@@ -11,7 +11,7 @@ interface BenchmarkResult {
 
 export async function runIngestionBenchmark(recipientCount = 1000): Promise<void> {
   console.log(`\n========================================================`);
-  console.log(`  Email Job Scheduler - Ingestion Benchmark (${recipientCount} recipients)`);
+  console.log(`  HyperSend - Ingestion Benchmark (${recipientCount} recipients)`);
   console.log(`========================================================\n`);
 
   const results: BenchmarkResult[] = [];
