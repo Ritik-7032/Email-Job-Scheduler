@@ -53,7 +53,8 @@ export async function handleGoogleAuthCallback(
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    res.redirect(`${frontendBase}?token=${encodeURIComponent(token)}`);
+    // Set HTTP-only secure cookie and redirect cleanly without exposing JWT in URL parameters
+    res.redirect(frontendBase);
   } catch (err: unknown) {
     const frontendBase = env.FRONTEND_URL.replace(/\/+$/, '');
     if (err instanceof Error) {

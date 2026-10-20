@@ -18,7 +18,14 @@ const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().default(process.env.NODE_ENV === 'test' ? 'mock-google-client-id' : ''),
   GOOGLE_CLIENT_SECRET: z.string().default(process.env.NODE_ENV === 'test' ? 'mock-google-client-secret' : ''),
   GOOGLE_CALLBACK_URL: z.string().url().default('http://localhost:5000/api/auth/callback'),
-  JWT_SECRET: z.string().default(process.env.NODE_ENV === 'test' ? 'test-jwt-secret-key-must-be-min-16-chars' : ''),
+  JWT_SECRET: z
+    .string()
+    .min(16, 'JWT_SECRET must be at least 16 characters long')
+    .default(
+      process.env.NODE_ENV === 'test'
+        ? 'test-jwt-secret-key-must-be-min-32-chars-long'
+        : 'super-secret-email-job-scheduler-jwt-secret-key-32-chars'
+    ),
 
   SMTP_HOST: z.string().default('smtp.ethereal.email'),
   SMTP_PORT: z.coerce.number().default(587),

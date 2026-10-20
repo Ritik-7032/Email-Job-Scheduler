@@ -115,7 +115,7 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
   let sendInfo: nodemailer.SentMessageInfo;
   try {
     const isSafeUrl = (url: string) =>
-      /^(https?:\/\/|data:image\/(png|jpe?g|gif|webp);base64,)/i.test(url.trim());
+      /^(https?:\/\/|data:(image|application|text)\/[a-zA-Z0-9.+-]+;base64,)/i.test(url.trim());
 
     const escapeHtmlAttr = (str: string) =>
       str
@@ -167,6 +167,25 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
       return html;
     };
 
+    // Extract genuine MIME attachments from body if embedded as data URLs
+    const mimeAttachments: Array<{ filename: string; content: Buffer; contentType?: string }> = [];
+    const attachmentRegex = /📎\s*\[Attachment:\s*(.*?)\]\((data:([^;]+);base64,([^)]+))\)/g;
+    let match: RegExpExecArray | null;
+    while ((match = attachmentRegex.exec(email.body)) !== null) {
+      try {
+        const filename = match[1].replace(/\s*\([^)]*\)$/, '').trim() || 'attachment';
+        const contentType = match[3];
+        const base64Data = match[4];
+        mimeAttachments.push({
+          filename,
+          content: Buffer.from(base64Data, 'base64'),
+          contentType,
+        });
+      } catch {
+        // Ignore malformed attachment payloads
+      }
+    }
+
     try {
       sendInfo = await transporter.sendMail({
         from: `"${sender.email}" <${sender.email}>`,
@@ -175,21 +194,16 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
         text: email.body,
         html: formatBodyToHtml(email.body),
         messageId: deterministicMessageId,
+        attachments: mimeAttachments.length > 0 ? mimeAttachments : undefined,
       });
     } catch (smtpErr: unknown) {
       const err = smtpErr instanceof Error ? smtpErr : new Error(String(smtpErr));
-      const isNetworkOrTimeout =
-        err.message.toLowerCase().includes('timeout') ||
-        err.message.includes('ECONNREFUSED') ||
-        err.message.includes('ETIMEDOUT') ||
-        err.message.includes('ENOTFOUND') ||
-        err.message.includes('ESOCKET') ||
-        err.message.includes('EAI_AGAIN');
+      const isDemoMode = env.DEMO_SIMULATE_SMTP || process.env.DEMO_SIMULATE_SMTP === 'true';
 
-      if (env.DEMO_SIMULATE_SMTP || process.env.DEMO_SIMULATE_SMTP === 'true' || isNetworkOrTimeout) {
+      if (isDemoMode) {
         logger.warn(
           { emailId, err: err.message },
-          'Outbound SMTP unreachable/timed out: automatically executing fallback delivery'
+          'DEMO_SIMULATE_SMTP enabled: executing simulated delivery for restricted cloud environment'
         );
         const fallbackTransporter = nodemailer.createTransport({ jsonTransport: true });
         sendInfo = await fallbackTransporter.sendMail({

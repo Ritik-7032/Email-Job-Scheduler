@@ -15,15 +15,21 @@ const rawFrontend = env.FRONTEND_URL ? env.FRONTEND_URL.replace(/\/+$/, '') : ''
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (e.g., server-to-server, curl, mobile)
+      // Allow requests with no origin (e.g., server-to-server, curl, health probes)
       if (!origin) return callback(null, true);
       const cleanOrigin = origin.replace(/\/+$/, '');
-      if (
-        cleanOrigin === rawFrontend ||
-        cleanOrigin.endsWith('.vercel.app') ||
-        cleanOrigin.includes('localhost') ||
-        cleanOrigin.includes('127.0.0.1')
-      ) {
+      const allowedOrigins = new Set(
+        [
+          rawFrontend,
+          'https://hypersend.vercel.app',
+          'http://localhost:5173',
+          'http://localhost:3000',
+          'http://127.0.0.1:5173',
+          'http://127.0.0.1:3000',
+        ].filter(Boolean)
+      );
+
+      if (allowedOrigins.has(cleanOrigin)) {
         return callback(null, true);
       }
       return callback(new Error(`Origin ${origin} not allowed by CORS policy`));

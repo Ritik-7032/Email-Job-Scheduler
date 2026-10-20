@@ -11,7 +11,12 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const rawApiBase = import.meta.env.VITE_API_URL || '';
-  const apiBase = (rawApiBase || 'https://email-job-scheduler-mtxd.onrender.com').replace(/\/+$/, '');
+  const apiBase = (
+    rawApiBase ||
+    (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')
+      ? 'https://email-job-scheduler-mtxd.onrender.com'
+      : '')
+  ).replace(/\/+$/, '');
   const googleAuthUrl = `${apiBase}/api/auth/google`;
 
   const handleDemoLogin = async () => {
