@@ -1,4 +1,4 @@
-# Email Job Scheduler
+# HyperSend
 
 [![CI](https://github.com/Ritik-7032/Email-Job-Scheduler/actions/workflows/ci.yml/badge.svg)](https://github.com/Ritik-7032/Email-Job-Scheduler/actions/workflows/ci.yml)
 ![Test Suite](https://img.shields.io/badge/Vitest-36%2F36%20Passed-brightgreen)
@@ -7,7 +7,7 @@
 ![Node](https://img.shields.io/badge/Node.js-%3E%3D20-green)
 ![License](https://img.shields.io/badge/License-MIT-purple)
 
-A production-grade, distributed background email scheduling and rate-limiting engine built with TypeScript, Express, BullMQ, Redis, PostgreSQL, Prisma, Nodemailer (Ethereal SMTP), and React.
+**HyperSend** is a production-grade, distributed background email scheduling and rate-limiting engine built with TypeScript, Express, BullMQ, Redis, PostgreSQL, Prisma, Nodemailer (Ethereal SMTP), and React.
 
 ---
 
@@ -20,11 +20,11 @@ A production-grade, distributed background email scheduling and rate-limiting en
 ---
 
 ## 📐 Interface & Dashboard Wireframe
-![Email Job Scheduler Interface Wireframe](./docs/dashboard-preview.svg)
+![HyperSend Interface Wireframe](./docs/dashboard-preview.svg)
 
 ```text
 +---------------------------------------------------------------------------------------------------------+
-|  ⚡ Email Job Scheduler                    [+ Compose Campaign]   [↻ Refresh]    👤 user@domain.com     |
+|  ⚡ HyperSend                              [+ Compose Campaign]   [↻ Refresh]    👤 user@domain.com     |
 +---------------------------------------------------------------------------------------------------------+
 |  [ Scheduled Emails (12) ]  [ Sent Emails (88) ]               🔍 [ Filter by recipient / subject... ]  |
 +---------------------------------------------------------------------------------------------------------+

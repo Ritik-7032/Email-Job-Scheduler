@@ -37,11 +37,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside className="w-64 shrink-0 bg-white min-h-screen border-r border-slate-200/80 p-4 flex flex-col justify-between select-none">
       <div className="flex flex-col gap-5">
-        {/* Brand Logo matching ONB in Figma */}
-        <div className="flex items-center gap-2 px-1 pt-1">
-          <div className="font-extrabold text-2xl tracking-tighter text-slate-900 font-mono">
-            ONB
+        {/* Brand Logo */}
+        <div className="flex items-center gap-2.5 px-1 pt-1">
+          <div className="w-8 h-8 bg-slate-900 rounded-xl flex items-center justify-center text-white font-bold text-sm tracking-wider shadow-sm">
+            HS
           </div>
+          <span className="font-bold text-xl tracking-tight text-slate-900">
+            HyperSend
+          </span>
         </div>
 
         {/* User Profile Card */}

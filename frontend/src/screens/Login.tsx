@@ -38,11 +38,15 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
           Live Evaluation & Portfolio Mode
         </div>
 
-        <h1 className="text-3xl font-bold text-slate-900 tracking-tight mb-2">
-          Email Job Scheduler
+        <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white font-extrabold text-lg tracking-wider shadow-md mx-auto mb-4">
+          HS
+        </div>
+
+        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-2">
+          HyperSend
         </h1>
         <p className="text-sm text-slate-500 mb-8">
-          Distributed BullMQ scheduler with Redis Lua rate-limiting
+          Distributed background email scheduling & rate-limiting engine
         </p>
 
         {errorMsg && (
