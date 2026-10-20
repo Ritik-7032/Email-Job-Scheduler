@@ -13,7 +13,8 @@ export function parseRedisOptions(urlStr: string): RedisOptions {
       tls: isTls ? { rejectUnauthorized: false, servername: u.hostname } : undefined,
       maxRetriesPerRequest: null,
       enableReadyCheck: false,
-      connectTimeout: 15000,
+      enableOfflineQueue: false,
+      connectTimeout: 5000,
       family: 4,
       retryStrategy(times) {
         return Math.min(times * 100, 3000);
@@ -23,12 +24,14 @@ export function parseRedisOptions(urlStr: string): RedisOptions {
     return {
       maxRetriesPerRequest: null,
       enableReadyCheck: false,
+      enableOfflineQueue: false,
       family: 4,
     };
   }
 }
 
 export const redis = new Redis(parseRedisOptions(env.REDIS_URL));
+export const redisClient = redis;
 
 redis.on('error', (err) => {
   // Log redis connection errors gracefully without unhandled event crashing

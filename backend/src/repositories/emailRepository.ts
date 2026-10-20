@@ -41,7 +41,8 @@ export async function createBatchWithEmails(
 
     const emailData: Email[] = recipients.map((recipient, index) => {
       const assignedSender = senders[index % senders.length];
-      const scheduledAt = new Date(startTimeMs + index * delayMs);
+      const senderSlot = Math.floor(index / senders.length);
+      const scheduledAt = new Date(startTimeMs + senderSlot * delayMs);
       return {
         id: crypto.randomUUID(),
         userId,

@@ -91,17 +91,17 @@ export async function handleGoogleCallback(
 }
 
 export async function loginDemoUser(): Promise<{ token: string; user: AuthUser }> {
-  const demoUser = await prisma.user.upsert({
-    where: { googleId: 'demo-recruiter-id' },
-    update: {
-      name: 'Demo Recruiter',
-      email: 'recruiter@demo.com',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
-    },
-    create: {
-      googleId: 'demo-recruiter-id',
-      name: 'Demo Recruiter',
-      email: 'recruiter@demo.com',
+  // Generate an isolated demo user for this session so visitors don't overwrite each other's data
+  const demoSuffix = crypto.randomBytes(3).toString('hex');
+  const demoGoogleId = `demo-guest-${demoSuffix}`;
+  const demoEmail = `guest-${demoSuffix}@demo.hypersend.internal`;
+  const demoName = `Demo Guest (#${demoSuffix})`;
+
+  const demoUser = await prisma.user.create({
+    data: {
+      googleId: demoGoogleId,
+      name: demoName,
+      email: demoEmail,
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
     },
   });

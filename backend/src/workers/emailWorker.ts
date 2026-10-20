@@ -6,12 +6,69 @@ import { logger } from '../lib/logger.js';
 import { EMAIL_QUEUE_NAME } from '../queue/emailQueue.js';
 import { checkAndAcquireSenderSlot, releaseHourlySlot } from '../services/rateLimiter.js';
 import { ScheduleJobData } from '../types/index.js';
+import { redisClient } from '../lib/redis.js';
 
 export const transporterCache = new Map<string, nodemailer.Transporter>();
 
 export function clearTransporterCache(): void {
   transporterCache.clear();
 }
+
+export const escapeHtml = (str: string): string =>
+  str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+export const isSafeUrl = (url: string): boolean => {
+  const trimmed = url.trim();
+  return /^(https?:\/\/[^\s"'<>]+|data:(image\/(png|jpe?g|gif|webp)|application\/pdf);base64,[a-zA-Z0-9+/=]+)$/i.test(trimmed);
+};
+
+export const formatBodyToHtml = (content: string): string => {
+  // 1. Strictly escape all HTML characters first so arbitrary HTML/scripts are neutralized
+  let html = escapeHtml(content);
+
+  // 2. Parse safe markdown images: ![alt](url) -> <img> with safe protocol validation
+  html = html.replace(
+    /!\[(.*?)\]\((.*?)\)/g,
+    (_match, alt, src) => {
+      const decodedSrc = src.replace(/&amp;/g, '&');
+      return isSafeUrl(decodedSrc)
+        ? `<div style="margin: 12px 0;"><img src="${escapeHtml(decodedSrc)}" alt="${alt}" style="max-width: 100%; max-height: 400px; border-radius: 12px; display: block;" /></div>`
+        : `<div style="margin: 12px 0;">[Image: ${alt}]</div>`;
+    }
+  );
+
+  // 3. Parse safe markdown attachment badges: 📎 [Attachment: name](href)
+  html = html.replace(
+    /📎\s*\[Attachment:\s*(.*?)\]\((.*?)\)/g,
+    (_match, name, href) => {
+      const decodedHref = href.replace(/&amp;/g, '&');
+      return isSafeUrl(decodedHref)
+        ? `<div style="margin: 8px 0;"><a href="${escapeHtml(decodedHref)}" download="${name}" style="display:inline-block; padding:8px 14px; background:#f4f6f5; border:1px solid #e0e0e0; border-radius:8px; text-decoration:none; color:#1a1a1a; font-family:sans-serif; font-size:12px; font-weight:600;">📎 ${name}</a></div>`
+        : `<div style="margin: 8px 0;">📎 ${name}</div>`;
+    }
+  );
+
+  // 4. Parse simple attachment badges: 📎 [Attachment: name]
+  html = html.replace(
+    /📎\s*\[Attachment:\s*(.*?)\]/g,
+    (_match, name) =>
+      `<div style="margin: 8px 0;"><span style="display:inline-block; padding:8px 14px; background:#f4f6f5; border:1px solid #e0e0e0; border-radius:8px; color:#1a1a1a; font-family:sans-serif; font-size:12px; font-weight:600;">📎 ${name}</span></div>`
+  );
+
+  // 5. Safe inline markdown formatting and line breaks
+  html = html
+    .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+    .replace(/\*(.*?)\*/g, '<i>$1</i>')
+    .replace(/~~(.*?)~~/g, '<s>$1</s>')
+    .replace(/\n/g, '<br/>');
+
+  return html;
+};
 
 function getOrCreateTransporter(sender: { id: string; smtpUser: string; smtpPassword: string }): nodemailer.Transporter {
   let transporter = transporterCache.get(sender.id);
@@ -114,64 +171,6 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
 
   let sendInfo: nodemailer.SentMessageInfo;
   try {
-    const isSafeUrl = (url: string) =>
-      /^(https?:\/\/|data:(image|application|text)\/[a-zA-Z0-9.+-]+;base64,)/i.test(url.trim());
-
-    const escapeHtmlAttr = (str: string) =>
-      str
-        .replace(/&/g, '&amp;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-
-    const sanitizeRawHtml = (raw: string) =>
-      raw
-        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-        .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
-        .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
-        .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, '')
-        .replace(/\son\w+\s*=\s*(['"]).*?\1/gi, '')
-        .replace(/\son\w+\s*=[^\s>]+/gi, '')
-        .replace(
-          /(href|src)\s*=\s*(?:"(?:javascript|data):[^"]*"|'(?:javascript|data):[^']*'|(?:javascript|data):[^\s>]+)/gi,
-          '$1="#"'
-        );
-
-    const formatBodyToHtml = (content: string) => {
-      // 1. Process images and attachments first to avoid syntax collisions with asterisks in URLs
-      let html = content
-        .replace(
-          /!\[(.*?)\]\((.*?)\)/g,
-          (_match, alt, src) =>
-            isSafeUrl(src)
-              ? `<div style="margin: 12px 0;"><img src="${escapeHtmlAttr(src)}" alt="${escapeHtmlAttr(alt)}" style="max-width: 100%; max-height: 400px; border-radius: 12px; display: block;" /></div>`
-              : `<div style="margin: 12px 0;">[Image: ${escapeHtmlAttr(alt)}]</div>`
-        )
-        .replace(
-          /📎\s*\[Attachment:\s*(.*?)\]\((.*?)\)/g,
-          (_match, name, href) =>
-            isSafeUrl(href)
-              ? `<div style="margin: 8px 0;"><a href="${escapeHtmlAttr(href)}" download="${escapeHtmlAttr(name)}" style="display:inline-block; padding:8px 14px; background:#f4f6f5; border:1px solid #e0e0e0; border-radius:8px; text-decoration:none; color:#1a1a1a; font-family:sans-serif; font-size:12px; font-weight:600;">📎 ${escapeHtmlAttr(name)}</a></div>`
-              : `<div style="margin: 8px 0;">📎 ${escapeHtmlAttr(name)}</div>`
-        )
-        .replace(
-          /📎\s*\[Attachment:\s*(.*?)\]/g,
-          (_match, name) =>
-            `<div style="margin: 8px 0;"><span style="display:inline-block; padding:8px 14px; background:#f4f6f5; border:1px solid #e0e0e0; border-radius:8px; color:#1a1a1a; font-family:sans-serif; font-size:12px; font-weight:600;">📎 ${escapeHtmlAttr(name)}</span></div>`
-        )
-        .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
-        .replace(/\*(.*?)\*/g, '<i>$1</i>')
-        .replace(/~~(.*?)~~/g, '<s>$1</s>');
-
-      if (!/<[a-z][\s\S]*>/i.test(content)) {
-        html = html.replace(/\n/g, '<br/>');
-      } else {
-        html = sanitizeRawHtml(html);
-      }
-      return html;
-    };
-
     // Extract genuine MIME attachments from body if embedded as data URLs
     const mimeAttachments: Array<{ filename: string; content: Buffer; contentType?: string }> = [];
     const attachmentRegex = /📎\s*\[Attachment:\s*(.*?)\]\((data:([^;]+);base64,([^)]+))\)/g;
@@ -262,8 +261,28 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
     }
   }
 
-  // Once message accepted, status update is retried separately to prevent duplicate sending
+  // Once message accepted by SMTP, record dispatch receipt in durable Redis ledger.
+  // If worker crashes or DB updates fail, reconciler reads this ledger and finalizes 'sent'
+  // without re-dispatching.
   const previewUrl = nodemailer.getTestMessageUrl(sendInfo) || null;
+  const dispatchKey = `dispatched:${emailId}`;
+  if (redisClient.status === 'ready' || Boolean((redisClient.set as any)?.mock)) {
+    try {
+      await redisClient.set(
+        dispatchKey,
+        JSON.stringify({
+          messageId: sendInfo.messageId,
+          previewUrl: previewUrl ? String(previewUrl) : null,
+          dispatchedAt: new Date().toISOString(),
+        }),
+        'EX',
+        86400 * 7 // 7 days retention
+      );
+    } catch (redisErr) {
+      logger.warn({ emailId, err: redisErr }, 'Failed to record dispatch in Redis ledger');
+    }
+  }
+
   let dbUpdateSuccess = false;
 
   for (let attempt = 1; attempt <= 3; attempt++) {

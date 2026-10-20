@@ -42,26 +42,29 @@ describe('Batch Staggering and Queue Job Dispatching', () => {
       createdAt: new Date(),
     };
 
-    const mockCreatedEmails = recipients.map((r, i) => ({
-      id: `email-${i}`,
-      userId: 'user-1',
-      batchId: mockBatch.id,
-      senderId: mockSenders[i % mockSenders.length].id,
-      recipient: r,
-      subject: 'Test Subject',
-      body: 'Test Body',
-      scheduledAt: new Date(startAt.getTime() + i * delayMs),
-      sentAt: null,
-      status: EmailStatus.scheduled,
-      attempts: 0,
-      errorMessage: null,
-      messageId: null,
-      previewUrl: null,
-      enqueuedAt: null,
-      processingStartedAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }));
+    const mockCreatedEmails = recipients.map((r, i) => {
+      const senderSlot = Math.floor(i / mockSenders.length);
+      return {
+        id: `email-${i}`,
+        userId: 'user-1',
+        batchId: mockBatch.id,
+        senderId: mockSenders[i % mockSenders.length].id,
+        recipient: r,
+        subject: 'Test Subject',
+        body: 'Test Body',
+        scheduledAt: new Date(startAt.getTime() + senderSlot * delayMs),
+        sentAt: null,
+        status: EmailStatus.scheduled,
+        attempts: 0,
+        errorMessage: null,
+        messageId: null,
+        previewUrl: null,
+        enqueuedAt: null,
+        processingStartedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+    });
 
     vi.spyOn(prisma, '$transaction').mockImplementation(async (callback: any) => {
       return callback({
@@ -87,9 +90,11 @@ describe('Batch Staggering and Queue Job Dispatching', () => {
     });
 
     expect(result.emails.length).toBe(3);
+    // Recipients 0 and 1 belong to sender-1 and sender-2 respectively at slot 0 (startAt)
     expect(result.emails[0].scheduledAt.getTime()).toBe(startAt.getTime());
-    expect(result.emails[1].scheduledAt.getTime()).toBe(startAt.getTime() + 2000);
-    expect(result.emails[2].scheduledAt.getTime()).toBe(startAt.getTime() + 4000);
+    expect(result.emails[1].scheduledAt.getTime()).toBe(startAt.getTime());
+    // Recipient 2 belongs to sender-1 at slot 1 (startAt + 2000)
+    expect(result.emails[2].scheduledAt.getTime()).toBe(startAt.getTime() + 2000);
 
     expect(result.emails[0].senderId).toBe('sender-1');
     expect(result.emails[1].senderId).toBe('sender-2');
@@ -99,7 +104,7 @@ describe('Batch Staggering and Queue Job Dispatching', () => {
   it('enqueues jobs to BullMQ with jobId = emailId and correct delay', async () => {
     const startAt = new Date(Date.now() + 10000);
     const delayMs = 3000;
-    const recipients = ['alpha@test.com', 'beta@test.com'];
+    const recipients = ['alpha@test.com', 'beta@test.com', 'gamma@test.com'];
 
     vi.spyOn(senderRepo, 'getAllSenders').mockResolvedValue(mockSenders);
 
@@ -112,26 +117,29 @@ describe('Batch Staggering and Queue Job Dispatching', () => {
       createdAt: new Date(),
     };
 
-    const mockEmails = recipients.map((r, i) => ({
-      id: `uuid-email-${i}`,
-      userId: 'user-1',
-      batchId: mockBatch.id,
-      senderId: mockSenders[i % mockSenders.length].id,
-      recipient: r,
-      subject: 'Subject',
-      body: 'Body',
-      scheduledAt: new Date(startAt.getTime() + i * delayMs),
-      sentAt: null,
-      status: EmailStatus.scheduled,
-      attempts: 0,
-      errorMessage: null,
-      messageId: null,
-      previewUrl: null,
-      enqueuedAt: null,
-      processingStartedAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }));
+    const mockEmails = recipients.map((r, i) => {
+      const senderSlot = Math.floor(i / mockSenders.length);
+      return {
+        id: `uuid-email-${i}`,
+        userId: 'user-1',
+        batchId: mockBatch.id,
+        senderId: mockSenders[i % mockSenders.length].id,
+        recipient: r,
+        subject: 'Subject',
+        body: 'Body',
+        scheduledAt: new Date(startAt.getTime() + senderSlot * delayMs),
+        sentAt: null,
+        status: EmailStatus.scheduled,
+        attempts: 0,
+        errorMessage: null,
+        messageId: null,
+        previewUrl: null,
+        enqueuedAt: null,
+        processingStartedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+    });
 
     vi.spyOn(prisma, '$transaction').mockImplementation(async (callback: any) => {
       return callback({
@@ -146,7 +154,7 @@ describe('Batch Staggering and Queue Job Dispatching', () => {
     });
 
     const addBulkSpy = vi.spyOn(emailQueue, 'addBulk').mockResolvedValue([] as any);
-    const updateManySpy = vi.spyOn(prisma.email, 'updateMany').mockResolvedValue({ count: 2 });
+    const updateManySpy = vi.spyOn(prisma.email, 'updateMany').mockResolvedValue({ count: 3 });
 
     const response = await scheduleEmails('user-1', {
       subject: 'Subject',
@@ -158,23 +166,26 @@ describe('Batch Staggering and Queue Job Dispatching', () => {
     });
 
     expect(response.batchId).toBe('batch-abc');
-    expect(response.count).toBe(2);
+    expect(response.count).toBe(3);
 
     expect(addBulkSpy).toHaveBeenCalledTimes(1);
     const queuedJobs = addBulkSpy.mock.calls[0][0];
 
-    expect(queuedJobs.length).toBe(2);
-    expect(queuedJobs[0].opts.jobId).toBeDefined();
+    expect(queuedJobs.length).toBe(3);
+    // Recipients 0 and 1 belong to sender-1 and sender-2 respectively at slot 0 (startAt)
     expect(queuedJobs[0].opts.jobId).toBe(queuedJobs[0].data.emailId);
     expect(queuedJobs[0].opts.delay).toBeGreaterThanOrEqual(9000);
 
-    expect(queuedJobs[1].opts.jobId).toBeDefined();
     expect(queuedJobs[1].opts.jobId).toBe(queuedJobs[1].data.emailId);
-    expect(queuedJobs[1].opts.delay).toBeGreaterThanOrEqual(12000);
+    expect(queuedJobs[1].opts.delay).toBeGreaterThanOrEqual(9000);
+
+    // Recipient 2 belongs to sender-1 at slot 1 (startAt + delayMs)
+    expect(queuedJobs[2].opts.jobId).toBe(queuedJobs[2].data.emailId);
+    expect(queuedJobs[2].opts.delay).toBeGreaterThanOrEqual(12000);
 
     expect(updateManySpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: { in: [queuedJobs[0].data.emailId, queuedJobs[1].data.emailId] } },
+        where: { id: { in: queuedJobs.map((j: any) => j.data.emailId) } },
       })
     );
   });

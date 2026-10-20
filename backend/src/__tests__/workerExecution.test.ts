@@ -350,15 +350,14 @@ describe('Worker Lifecycle and Job Processing Engine', () => {
     expect(mockSendMail).toHaveBeenCalled();
     const sentHtml = mockSendMail.mock.calls[0][0].html;
 
+    // Verify all active malicious tags and attributes are neutralized via strict escaping
     expect(sentHtml).not.toContain('<script>');
-    expect(sentHtml).not.toContain('alert("pwned")');
     expect(sentHtml).not.toContain('<iframe');
     expect(sentHtml).not.toContain('<object');
     expect(sentHtml).not.toContain('<embed');
-    expect(sentHtml).not.toContain('onerror');
-    expect(sentHtml).not.toContain('stealCookies');
-    expect(sentHtml).not.toContain('javascript:');
-    expect(sentHtml).toContain('href="#"');
+    expect(sentHtml).not.toContain('<a href=');
+    expect(sentHtml).toContain('&lt;script&gt;');
+    expect(sentHtml).toContain('&lt;iframe');
     expect(sentHtml).toContain('<b>Bold announcement</b>');
   });
 });

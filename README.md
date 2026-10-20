@@ -1,7 +1,7 @@
 # HyperSend
 
 [![CI](https://github.com/Ritik-7032/Email-Job-Scheduler/actions/workflows/ci.yml/badge.svg)](https://github.com/Ritik-7032/Email-Job-Scheduler/actions/workflows/ci.yml)
-![Test Suite](https://img.shields.io/badge/Vitest-36%2F36%20Passed-brightgreen)
+![Test Suite](https://img.shields.io/badge/Vitest-37%2F37%20Passed-brightgreen)
 ![Core Engine Coverage](https://img.shields.io/badge/Core%20Engine%20Coverage-90%25%2B-brightgreen)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)
 ![Node](https://img.shields.io/badge/Node.js-%3E%3D20-green)
@@ -404,18 +404,20 @@ When backed by active database and cache instances, the asynchronous ingestion e
 ### Worker Throughput & Rate Control Dynamics
 1. **Non-blocking API Design**: The API server immediately responds with `{ batchId, count: 1000 }` after queue dispatch. Dispatching emails over SMTP is handled purely asynchronously by decoupled worker processes.
 2. **Buffer Saturation Prevention**: Bulk inserts and BullMQ enqueuing are chunked in slices of 1,000 to keep memory flat and prevent Redis pipeline timeouts.
-3. **Throughput Scaling**: With `WORKER_CONCURRENCY = 5` and an enforced `MIN_DELAY_BETWEEN_EMAILS_MS = 2000` across 5 active senders, the worker pool achieves a governed throughput of 2.5 emails/second (up to 9,000 emails/hour aggregate across senders), smoothly throttled by the atomic Redis Lua gate.
+3. **Throughput Scaling**: Staggering is calculated per sender account (`slot = Math.floor(index / senders.length)`). With 5 active senders and a per-sender delay of 2,000ms, all 5 senders dispatch concurrently at `t = 0`, then at `t = 2000ms`, achieving a governed aggregate throughput of **2.5 emails/second** (up to 9,000 emails/hour aggregate across senders), smoothly throttled by the atomic Redis Lua gate.
 
 ---
 
 ## Assumptions and Shortcuts / Trade-Offs
 
-1. **Google OAuth**: A single verified Google account creates or logs into a user account with signed HTTP-only JWT session cookies.
-2. **Ethereal Test Senders**: Test accounts are generated dynamically on startup/seeding rather than using production SMTP credentials.
+1. **Google OAuth & Secure Cookie Sessions**: Authenticated via Google OAuth 2.0 with cryptographic state validation and signed HTTP-only JWT session cookies (no localStorage tokens).
+2. **Ethereal Test Senders**: Test accounts are generated dynamically on startup/seeding (`npm run seed:senders`) rather than using production SMTP credentials.
 3. **UTC Hourly Windows**: Hourly limits reset at the start of each UTC hour (e.g. `14:00:00 UTC`), rather than on a rolling 60-minute sliding window.
-4. **At-Least-Once Delivery & SMTP Dual-Write Boundary**: Sending an email via SMTP is an external network operation that cannot be joined into an atomic two-phase commit (2PC) with PostgreSQL. Under normal operations, atomic SQL conditional claims prevent duplicate worker processing. If a worker process crashes precisely after SMTP accepts a message but before PostgreSQL commits `status = 'sent'`, the reconciler (`recoverStaleProcessingEmails`) resets uncommitted processing rows to `scheduled` after the 5-minute timeout. This prioritizes **at-least-once delivery** over message loss. To enable downstream Mail Transfer Agents (MTAs) and recipient inboxes to deduplicate any re-delivered message, outbound emails set a deterministic RFC 5322 header: `Message-ID: <${emailId}@scheduler.internal>`.
-5. **Content Sanitization**: Email bodies support markdown elements (images, attachments, bold, italic, strikethrough). When raw HTML is submitted, an internal sanitizer strips potentially dangerous elements (`<script>`, `<iframe>`, `<object>`, `<embed>`), inline `on*` event handlers, and executable URI protocols (`javascript:`, `data:`).
+4. **At-Least-Once Delivery & Dual-Write Mitigation (Redis Dispatch Ledger)**: Sending an email via SMTP is an external network operation that cannot be joined into an atomic two-phase commit (2PC) with PostgreSQL. To eliminate duplicate sends if a worker process terminates or PostgreSQL experiences lock contention immediately after SMTP accepts the message, the worker writes an atomic dispatch confirmation to a Redis ledger (`dispatched:${emailId}`) before updating the database. The background reconciler (`recoverStaleProcessingEmails`) inspects this ledger before resetting any stale `processing` row: if the receipt exists, it finalizes status directly to `sent` rather than re-queueing. As an additional defense-in-depth safeguard for downstream MTAs, outbound emails declare a deterministic RFC 5322 header: `Message-ID: <${emailId}@scheduler.internal>`.
+5. **Content Sanitization & Safe Markdown**: Rather than relying on fragile regex HTML tag-stripping, the body pipeline strictly escapes all raw HTML input (`&`, `<`, `>`, `"`, `'`) before converting markdown constructs (`**bold**`, `*italic*`, `~~strikethrough~~`, `![alt](url)`, `📎 [Attachment: name](url)`). Images and links are strictly validated against allowlisted protocols (`http://` and `https://`), completely neutralizing arbitrary `<script>`, `<iframe>`, inline `onload/onerror` handlers, and `javascript:` URIs.
 6. **Process Model & Cloud SMTP Simulation**: In Docker Compose and multi-container environments, the API server (`src/server.ts`) and Queue Worker (`src/worker.ts`) run as distinct, decoupled OS processes (`SEPARATE_WORKER=true`). On single-container deployments (such as Render's free tier), `server.ts` boots an internal worker runner. Furthermore, because cloud free tiers (e.g. Render) enforce strict outbound firewalls blocking external SMTP connections (port 587), `DEMO_SIMULATE_SMTP=true` is enabled on Render to simulate message delivery and test queue state transitions without socket timeouts. Real Ethereal SMTP dispatch operates natively in Docker and unrestricted environments.
+7. **Isolated Demo Recruiter Sessions**: Public demo logins (`POST /api/auth/demo`) create isolated, unique demo accounts with rate limiting (max 15 sessions/hour per IP), ensuring that recruiters evaluating the live app do not collide with or overwrite each other's campaigns.
+8. **Clean Distribution Packaging**: Run `npm run package:zip` to export a clean, recruiter-ready distribution archive containing strictly git-tracked files (preventing accidental bundling of local `.env` secrets or database dumps).
 
 ---
 

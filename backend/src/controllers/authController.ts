@@ -96,12 +96,30 @@ export function logoutUser(_req: Request, res: Response): void {
   });
 }
 
+const demoRateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
 export async function handleDemoLogin(
-  _req: Request,
+  req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
+    const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'unknown';
+    const now = Date.now();
+    const current = demoRateLimitMap.get(clientIp);
+
+    if (current && current.resetAt > now) {
+      if (current.count >= 15) {
+        res.status(429).json({
+          error: 'Rate limit exceeded: maximum 15 demo sessions per hour per IP. Please try again later.',
+        });
+        return;
+      }
+      current.count++;
+    } else {
+      demoRateLimitMap.set(clientIp, { count: 1, resetAt: now + 60 * 60 * 1000 });
+    }
+
     const { token, user } = await loginDemoUser();
 
     res.cookie('token', token, {

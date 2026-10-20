@@ -334,4 +334,45 @@ describe('Critical Failure, Concurrency, and Recovery Scenarios', () => {
     await expect(recoverStaleProcessingEmails()).rejects.toThrow('Fatal DB connection error');
     await expect(requeueOrphanedEmails()).rejects.toThrow('Fatal DB connection error');
   });
+
+  it('Scenario 10: Reconciles uncommitted post-SMTP dispatch from Redis ledger directly to sent status, preventing duplicate delivery', async () => {
+    const { recoverStaleProcessingEmails } = await import('../services/requeueService.js');
+    const { redisClient } = await import('../lib/redis.js');
+
+    const stalePostSmtpEmail = {
+      id: 'stale-post-smtp-99',
+      status: EmailStatus.processing,
+      processingStartedAt: new Date(Date.now() - 600000),
+      attempts: 1,
+      messageId: null,
+    };
+
+    vi.spyOn(prisma.email, 'findMany').mockResolvedValueOnce([stalePostSmtpEmail] as any);
+    const originalGet = redisClient.get;
+    (redisClient as any).get = vi.fn().mockResolvedValue(
+      JSON.stringify({
+        messageId: '<dispatched-msg-id-99>',
+        previewUrl: 'https://ethereal.email/message/99',
+        dispatchedAt: new Date().toISOString(),
+      })
+    );
+
+    const updateSpy = vi.spyOn(prisma.email, 'update').mockResolvedValue({} as any);
+
+    try {
+      const recoveredCount = await recoverStaleProcessingEmails(300000);
+
+      expect(recoveredCount).toBe(1);
+      expect(updateSpy).toHaveBeenCalledWith({
+        where: { id: 'stale-post-smtp-99' },
+        data: expect.objectContaining({
+          status: 'sent',
+          messageId: '<dispatched-msg-id-99>',
+          previewUrl: 'https://ethereal.email/message/99',
+        }),
+      });
+    } finally {
+      (redisClient as any).get = originalGet;
+    }
+  });
 });

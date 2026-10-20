@@ -57,7 +57,8 @@ export async function runIngestionBenchmark(recipientCount = 1000): Promise<void
 
   const emailRecords = validated.recipients.map((recipient, index) => {
     const assignedSender = mockSenders[index % mockSenders.length];
-    const scheduledAt = new Date(startTimeMs + index * validated.delayMs);
+    const senderSlot = Math.floor(index / mockSenders.length);
+    const scheduledAt = new Date(startTimeMs + senderSlot * validated.delayMs);
     return {
       id: crypto.randomUUID(),
       senderId: assignedSender.id,
@@ -69,6 +70,7 @@ export async function runIngestionBenchmark(recipientCount = 1000): Promise<void
   const tStaggering = performance.now() - t1;
 
   const memAfterStagger = process.memoryUsage().heapUsed;
+  const slotsPerSender = Math.ceil(recipientCount / mockSenders.length);
   results.push({
     step: 'Staggering Math & Round-Robin Sender Distribution',
     durationMs: Number(tStaggering.toFixed(2)),
@@ -77,7 +79,8 @@ export async function runIngestionBenchmark(recipientCount = 1000): Promise<void
     details: {
       sendersUsed: mockSenders.length,
       averagePerSender: recipientCount / mockSenders.length,
-      staggerSpanMinutes: Number(((recipientCount * validated.delayMs) / 1000 / 60).toFixed(1)),
+      staggerSpanMinutes: Number(((slotsPerSender * validated.delayMs) / 1000 / 60).toFixed(1)),
+      effectiveThroughputPerSec: Number(((mockSenders.length / (validated.delayMs / 1000))).toFixed(1)),
     },
   });
 

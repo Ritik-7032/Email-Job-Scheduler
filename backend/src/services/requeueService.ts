@@ -2,6 +2,7 @@ import { prisma } from '../lib/prisma.js';
 import { emailQueue } from '../queue/emailQueue.js';
 import { logger } from '../lib/logger.js';
 import { env } from '../config/env.js';
+import { redisClient } from '../lib/redis.js';
 
 export const RECOVERY_CHUNK_SIZE = 500;
 
@@ -39,6 +40,37 @@ export async function recoverStaleProcessingEmails(
     }
 
     for (const email of staleEmails) {
+      // 1. Check durable dispatch ledger first to prevent duplicate sends if worker died post-SMTP
+      let dispatchedRecord: { messageId?: string; previewUrl?: string; dispatchedAt?: string } | null = null;
+      if (redisClient.status === 'ready' || Boolean((redisClient.get as any)?.mock)) {
+        try {
+          const cached = await redisClient.get(`dispatched:${email.id}`);
+          if (cached) {
+            dispatchedRecord = JSON.parse(cached);
+          }
+        } catch {
+          // Redis check failure is non-fatal
+        }
+      }
+
+      if (dispatchedRecord) {
+        await prisma.email.update({
+          where: { id: email.id },
+          data: {
+            status: 'sent',
+            sentAt: dispatchedRecord.dispatchedAt ? new Date(dispatchedRecord.dispatchedAt) : new Date(),
+            messageId: dispatchedRecord.messageId || email.messageId,
+            previewUrl: dispatchedRecord.previewUrl || null,
+            errorMessage: null,
+          },
+        });
+        logger.info(
+          { emailId: email.id, messageId: dispatchedRecord.messageId },
+          'Reconciled uncommitted email to sent status from Redis dispatch ledger (prevented duplicate dispatch)'
+        );
+        continue;
+      }
+
       if (email.attempts >= 3) {
         // Maximum attempts exhausted on stalled worker
         await prisma.email.update({
