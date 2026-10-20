@@ -144,8 +144,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      <div className="text-[10px] text-slate-400 text-center pb-2">
-        Email Job Scheduler v1.0
+      <div className="text-[10px] text-slate-400 text-center pb-2 font-medium">
+        HyperSend v1.0
       </div>
     </aside>
   );
