@@ -264,6 +264,7 @@ export async function recoverLostRedisScheduledEmails(
 ): Promise<number> {
   const overdueThreshold = new Date(Date.now() - overdueMs);
   let totalRequeued = 0;
+  let cursorId: string | undefined = undefined;
 
   while (true) {
     let pendingChunk;
@@ -279,8 +280,10 @@ export async function recoverLostRedisScheduledEmails(
           },
         },
         take: RECOVERY_CHUNK_SIZE,
+        skip: cursorId ? 1 : 0,
+        cursor: cursorId ? { id: cursorId } : undefined,
         orderBy: {
-          scheduledAt: 'asc',
+          id: 'asc',
         },
       });
     } catch (err: unknown) {
@@ -294,6 +297,8 @@ export async function recoverLostRedisScheduledEmails(
     if (pendingChunk.length === 0) {
       break;
     }
+
+    cursorId = pendingChunk[pendingChunk.length - 1].id;
 
     const missingJobs: typeof pendingChunk = [];
     for (const email of pendingChunk) {
