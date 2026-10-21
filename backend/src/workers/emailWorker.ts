@@ -275,12 +275,7 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
   // Once message accepted by SMTP, record dispatch receipt in durable Redis ledger.
   // If worker crashes or DB updates fail, reconciler reads this ledger and finalizes 'sent'
   // without re-dispatching.
-  const rawPreviewUrl = nodemailer.getTestMessageUrl(sendInfo);
-  const previewUrl =
-    rawPreviewUrl ||
-    (sender.email.includes('ethereal.email')
-      ? `https://ethereal.email/message/${deterministicMessageId.replace(/[<>@.]/g, '')}`
-      : null);
+  const previewUrl = nodemailer.getTestMessageUrl(sendInfo) || null;
   const dispatchKey = `dispatched:${emailId}`;
   if (redisClient.status === 'ready' || Boolean((redisClient.set as any)?.mock)) {
     try {
