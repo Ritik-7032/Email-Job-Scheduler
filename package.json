@@ -13,6 +13,7 @@
     "seed:senders": "npm --prefix backend run seed:senders",
     "requeue": "npm --prefix backend run requeue",
     "benchmark": "npm --prefix backend run benchmark",
+    "profile:ingestion": "npm --prefix backend run profile:ingestion",
     "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck",
     "package:zip": "git archive --format=zip --output=hypersend-clean-submission.zip HEAD"
   }

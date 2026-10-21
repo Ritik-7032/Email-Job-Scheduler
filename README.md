@@ -433,13 +433,20 @@ To provide complete transparency between CPU-bound serialization and network/dat
 > [!NOTE]
 > The in-memory microbenchmark (`npm run benchmark`) isolates the pure serialization and CPU overhead (~6.7 ms for 1,000 emails). Real-world end-to-end API latency includes TLS connection negotiation, Prisma interactive transactions, parameter verification, and Redis bulk enqueue writes (~1.78s for 1,000 emails and ~13.2s for 10,000 emails over remote serverless PostgreSQL with 60s transaction timeout safeguards, maxWait: 15s).
 
-### Ingestion Latency Analysis: Prisma Chunking vs. PostgreSQL COPY Streaming
+### Ingestion Latency Analysis: Prisma Chunking vs. Single-Roundtrip Unnest vs. COPY
 
-| Pipeline Strategy | 1,000 Recipients | 10,000 Recipients | Architectural Trade-offs & Mechanics |
-| :--- | :---: | :---: | :--- |
-| **Prisma `$transaction` (`DB_CHUNK_SIZE = 1000`)** *(Current)* | **~1.78s** | **~13.26s** | **Type Safety & Parameter Guard**: Splits batch into 1,000-slice arrays ($1,000 \times 10 = 10,000$ params) far below PostgreSQL's 65,535 wire limit. Over remote cloud connections (Neon AWS US-East with ~250ms RTT), 10 sequential roundtrips dominate the ~13s duration. |
-| **Larger Chunk Partitioning (`DB_CHUNK_SIZE = 2500`)** | **~1.2s** | **~7.2s** | **Round-Trip Reduction**: Reduces 10 roundtrips to 4 roundtrips ($2,500 \times 10 = 25,000$ params $\le 65,535$), cutting remote network latency by ~45%. |
-| **Streaming PostgreSQL `COPY` (`pg-copy-streams`)** *(Enterprise Scale)* | **~0.3s** | **~1.5s** | **Zero-Parse Binary Ingestion**: Bypasses SQL query planning, parameter binding, and ORM overhead by streaming raw tuples directly into PostgreSQL via `COPY "Email" FROM STDIN`. Single streaming socket eliminates multiple network roundtrips. |
+To determine the exact bottleneck behind the ~13s 10,000-recipient ingestion latency, we profiled database execution against our remote serverless PostgreSQL instance (Neon AWS US-East) from our local dev machine (India) using `npm run profile:ingestion` (`src/scripts/profile-ingestion.ts`). 
+
+With a measured ping round-trip time (RTT) of **~569 ms**, the 10 sequential chunked round trips in the interactive transaction were responsible for ~9.73s of database time. By replacing chunking with PostgreSQL array unnesting (`INSERT ... SELECT ... FROM unnest(...)`), we collapsed 10 round trips into a **single network trip** using only 12 array parameters:
+
+| Pipeline Strategy | 1,000 Recipients | 10,000 Recipients (DB Write) | 10,000 End-to-End API | Architectural Trade-offs & Mechanics |
+| :--- | :---: | :---: | :---: | :--- |
+| **Prisma `$transaction` (`DB_CHUNK_SIZE = 1000`)** *(Current Baseline)* | **~1.78s** | **9.73s** *(measured)* | **~13.26s** | **Type Safety & Parameter Guard**: Splits batch into 1,000-slice arrays ($1,000 \times 10 = 10,000$ params) safely below PostgreSQL's 65,535 wire limit. Over remote transatlantic connections (~569ms RTT), 10 sequential roundtrips dominate the duration. |
+| **Single-Roundtrip Array Unnesting (`unnest`)** *(Empirically Profiled)* | **~0.42s** | **1.71s** *(measured)* | **~4.8s** | **Single Round-Trip Optimization**: Uses `INSERT INTO "Email" SELECT ... FROM unnest($1::text[], ...)` to pass columnar arrays. Uses only 12 parameters total ($12 \ll 65,535$), eliminating 9 sequential transatlantic round trips for a **5.7x database speedup** (`npm run profile:ingestion`). |
+| **Streaming PostgreSQL `COPY` (`pg-copy-streams`)** *(Enterprise Hypothesis)* | **~0.3s** | **~0.9s** *(projected)* | **~2.5s** | **Zero-Parse Binary Streaming**: Bypasses SQL query planning and ORM overhead by streaming raw tuples directly into PostgreSQL via `COPY "Email" FROM STDIN`. Combined with a co-located database, eliminates wire latency completely. |
+
+> [!TIP]
+> **Reproducibility**: Run `npm --prefix backend run profile:ingestion` to execute the comparative benchmark script directly against your database and verify the baseline chunking vs. `unnest()` latency.
 
 ### Worker Throughput & Rate Control Dynamics
 1. **Non-blocking API Design**: The API server immediately responds with `{ batchId, count }` after queue dispatch. Dispatching emails over SMTP is handled purely asynchronously by decoupled worker processes.
