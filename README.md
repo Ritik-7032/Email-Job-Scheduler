@@ -1,14 +1,14 @@
 # HyperSend
 
 [![CI](https://github.com/Ritik-7032/Email-Job-Scheduler/actions/workflows/ci.yml/badge.svg)](https://github.com/Ritik-7032/Email-Job-Scheduler/actions/workflows/ci.yml)
-![Test Suite](https://img.shields.io/badge/Vitest-46%2F46%20Passed-brightgreen)
-![Coverage](https://img.shields.io/badge/Coverage-69.8%25%20Lines%20%7C%2071.1%25%20Branch-blue)
+![Test Suite](https://img.shields.io/badge/Vitest-56%2F56%20Passed-brightgreen)
+![Coverage](https://img.shields.io/badge/Coverage-78.7%25%20Lines%20%7C%2073.1%25%20Branch-blue)
 ![Core Engine](https://img.shields.io/badge/Core%20Queue%20%26%20Limiter-100%25-brightgreen)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)
 ![Node](https://img.shields.io/badge/Node.js-%3E%3D20-green)
 ![License](https://img.shields.io/badge/License-MIT-purple)
 
-**HyperSend** is a production-grade, distributed background email scheduling and rate-limiting engine built with TypeScript, Express, BullMQ, Redis, PostgreSQL, Prisma, Nodemailer (Ethereal SMTP), and React.
+**HyperSend** is a production-minded background email scheduling and rate-limiting engine built with TypeScript, Express, BullMQ, Redis, PostgreSQL, Prisma, Nodemailer (Ethereal SMTP), and React.
 
 ---
 
@@ -96,7 +96,7 @@ The system schedules and sends email batches with per-sender minimum delays and 
 
 - **Backend**: Node.js, TypeScript, Express, BullMQ, ioredis, PostgreSQL, Prisma, Nodemailer, Zod, google-auth-library, jsonwebtoken, Pino.
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Lucide icons, Nginx.
-- **Testing**: Vitest, Supertest (46/46 Unit & Integration Tests across 6 test suites).
+- **Testing**: Vitest, Supertest (56/56 Unit & Integration Tests across 7 test suites).
 - **Infra**: Docker Compose (Full-stack containerization with isolated network & persistent volumes).
 
 ---
@@ -191,14 +191,15 @@ npm --prefix backend run test:coverage
 | Module / Component | Line Coverage | Branch Coverage | Focus Area |
 | :--- | :---: | :---: | :--- |
 | **Rate Limiter Lua Script** (`rateLimiter.ts`) | 100% | 100% | Atomic gap TTL checks, UTC hourly resets, slot reservations |
-| **Requeue & Crash Recovery** (`requeueService.ts`) | 96.9% | 87.8% | Orphaned job requeuing, stale processing reconciliations, automatic transient timeout retries |
+| **Database Transaction Ingestion** (`emailRepository.ts`) | 100% | 100% | Chunked batch creation, bulk updates, sequential sender delay calculation, pagination |
+| **Requeue & Crash Recovery** (`requeueService.ts`) | 95.0% | 86.3% | Orphaned job requeuing, stale processing reconciliations, Redis crash recovery, timeout retries |
+| **Sender Repository & Pool Contention** (`senderRepository.ts`) | 94.6% | 71.4% | Pool exhaustion retries, automatic Ethereal test account seeding |
 | **Input Validator** (`scheduleValidator.ts`) | 100% | 100% | Bounds checking, recipient limits, RFC 5322 validation |
 | **Email Queue Initialization** (`emailQueue.ts`) | 100% | 100% | BullMQ connection and queue options |
-| **CSRF Defense & Auth Middleware** (`csrf.ts`, `auth.ts`) | 82.5% | 73.1% | OWASP Origin verification, safe method bypass, JWT cookie parsing |
 | **Express Application Setup** (`app.ts`) | 97.2% | 88.2% | Deep health probes (`/health`, `/api/health`), CORS allowlist |
-| **Email Worker Processor** (`emailWorker.ts`) | 75.3% | 74.1% | Atomic SQL claims, moveToDelayed handling, retry exhaustion, strict HTML escaping, cloud fallback |
-| **Database Transaction Ingestion** (`emailRepository.ts`) | 57.1% | 87.5% | Chunked batch creation, bulk updates, sequential sender delay calculation |
-| **Overall Backend Codebase** | **69.8%** | **71.1%** | Full backend source files (excluding scripts/entrypoints) |
+| **Email Worker Processor** (`emailWorker.ts`) | 85.5% | 76.6% | Atomic SQL claims, moveToDelayed handling, retry exhaustion, Redis dispatch ledger, event listeners |
+| **CSRF Defense & Auth Middleware** (`csrf.ts`, `auth.ts`) | 83.6% | 58.3% | OWASP Origin verification, safe method bypass, JWT cookie parsing |
+| **Overall Backend Codebase** | **78.7%** | **73.1%** | Full backend source files (56 tests across 7 test suites) |
 
 ---
 
@@ -379,10 +380,10 @@ WHERE "id" = $id
 - If SMTP send fails: the reserved hourly slot is decremented, attempts are incremented, and if retry attempts remain within the 3 total attempts limit (1 initial attempt + 2 retries), status is set to `scheduled` and the error is rethrown for BullMQ exponential backoff (5s base). Upon exhausting all 3 attempts, status is permanently set to `failed` with the error reason recorded.
 - If SMTP send succeeds: the status update to `sent` is retried with backoff to prevent duplicate dispatches if the database experiences transient contention.
 
-### Enqueue & Crash Recovery Window
-- If the API server crashes after inserting database rows but before BullMQ enqueueing finishes, the rows remain with `enqueuedAt = null`.
-- On API startup and via `npm run requeue`, `requeueOrphanedEmails()` executes a chunked while-loop (fetching in chunks of 500) to recover any volume of orphaned records (>500 or 1000+) without loading the entire backlog into memory, enqueueing them with their stable UUID `jobId`.
-- Additionally, `recoverStaleProcessingEmails()` inspects rows stuck in `processing` beyond `STALE_PROCESSING_MS`: if attempts are exhausted ($\ge 3$), status is marked `failed`; otherwise, status is reset to `scheduled` (with `enqueuedAt = null` and `processingStartedAt = null`) for safe at-least-once re-enqueueing and retry.
+### Enqueue, Crash Recovery & Redis Data Loss Resilience
+- **API Crash Mid-Ingestion (`enqueuedAt = null`)**: If the API server crashes after committing database rows but before BullMQ enqueueing finishes, rows remain with `enqueuedAt = null`. On API boot and via `npm run requeue`, `requeueOrphanedEmails()` fetches in chunks of 500 to re-enqueue any volume of orphaned records with their stable UUID `jobId`.
+- **Worker Crash Mid-Execution (Stale `processing`)**: `recoverStaleProcessingEmails()` inspects rows stuck in `processing` beyond `STALE_PROCESSING_MS`. If a worker died post-SMTP, it finalizes `sent` using the Redis dispatch ledger; otherwise, it resets status to `scheduled` (or `failed` if attempts $\ge 3$).
+- **Redis Crash / Restart with Dropped Jobs (`recoverLostRedisScheduledEmails`)**: If Redis restarts or drops in-memory queue jobs (e.g. within an AOF fsync window), scheduled emails in PostgreSQL already had `enqueuedAt` populated and would otherwise remain permanently stalled. HyperSend's reconciler actively queries overdue scheduled emails (`scheduledAt < now - 2 min`) and checks `emailQueue.getJob(email.id)`. If the job is missing from Redis, it automatically re-enqueues the job into BullMQ with `delay = 0`, restoring guaranteed delivery across Redis restarts.
 
 ---
 
@@ -390,23 +391,21 @@ WHERE "id" = $id
 
 The system is architected to handle bulk batches of 1,000+ recipients reliably without blocking the Express event loop, exceeding database parameter limits, or saturating Redis command buffers.
 
-### Ingestion Performance (In-Memory Microbenchmark - 1,000 Recipients)
+### Measured Performance: End-to-End vs. In-Memory Microbenchmark
 
-The standalone script (`npm run benchmark`) is an **isolated in-memory microbenchmark** evaluating the CPU and serialization overhead of the ingestion pipeline prior to I/O (Zod validation, slot calculation, chunk partitioning, and BullMQ payload serialization):
+To provide complete transparency between CPU-bound serialization and network/database I/O, latency was measured across both layers:
 
-| Benchmark Step | Mechanism | Measured Duration | Resource Impact |
-| :--- | :--- | :--- | :--- |
-| **Zod Validation & Sanitation** | Schema bounds checking & RFC 5322 parsing | `~3.1 ms` | Heap: +0.96 MB |
-| **Staggering & Sender Distribution** | In-memory UTC offsets & sender slot calculation | `~1.2 ms` | ~830,000 ops/sec |
-| **Chunk Partitioning** | Partitions into 1,000-slice arrays (DB parameter guard) | `~0.01 ms` | Parameter guard (< 10k params) |
-| **BullMQ Payload Preparation** | Bulk delayed job payload construction | `~2.4 ms` | Redis payload: ~190 KB total (~190 bytes/job) |
-| **Total In-Memory Pipeline Latency** | **Execution prior to I/O dispatch** | **~6.7 ms** | **Peak heap: ~10.2 MB** |
+| Layer / Measurement | 1,000 Recipients | 10,000 Recipients | Details & Guarantees |
+| :--- | :---: | :---: | :--- |
+| **In-Memory CPU Preprocessing** | `~6.7 ms` | `~65 ms` | Zod RFC 5322 parsing, sender staggering, chunk partitioning, BullMQ payload formatting |
+| **Real End-to-End API Dispatch** (PostgreSQL + BullMQ) | **1.78s** *(median)* | **13.26s** *(median)* | Interactive `$transaction`, 1,000-row `createMany` chunks, TLS roundtrips, Redis `addBulk` |
+| **API Response Behavior** | Immediate | Immediate | API returns `{ batchId, count }` immediately; worker processes dispatch asynchronously |
 
 > [!NOTE]
-> This microbenchmark measures CPU-bound preprocessing in memory. End-to-end HTTP request completion (`POST /api/emails/schedule`) includes network transit, PostgreSQL `$transaction` commit time, and Redis `queue.addBulk()` round-trips (~200–350ms depending on database location), while final email delivery latency is governed by SMTP server socket response times.
+> The in-memory microbenchmark (`npm run benchmark`) isolates the pure serialization and CPU overhead (~6.7 ms for 1,000 emails). Real-world end-to-end API latency includes TLS connection negotiation, Prisma interactive transactions, parameter verification, and Redis bulk enqueue writes (~1.78s for 1,000 emails and ~13.2s for 10,000 emails over remote serverless PostgreSQL with 30s transaction timeout safeguards).
 
 ### Worker Throughput & Rate Control Dynamics
-1. **Non-blocking API Design**: The API server immediately responds with `{ batchId, count: 1000 }` after queue dispatch. Dispatching emails over SMTP is handled purely asynchronously by decoupled worker processes.
+1. **Non-blocking API Design**: The API server immediately responds with `{ batchId, count }` after queue dispatch. Dispatching emails over SMTP is handled purely asynchronously by decoupled worker processes.
 2. **Buffer Saturation Prevention**: Bulk inserts and BullMQ enqueuing are chunked in slices of 1,000 to keep memory flat and prevent Redis pipeline timeouts.
 3. **Throughput Scaling & Dual Rate Boundaries**:
    - **Burst Dispatch Rate (Inter-Email Delay)**: Staggering is calculated per sender account (`slot = Math.floor(index / senders.length)`). At the configured `DEFAULT_DELAY_MS = 2000` (2 seconds), each sender spaces its dispatches by 2 seconds. Across 5 active senders dispatching in parallel with `WORKER_CONCURRENCY = 5`, this achieves a peak burst rate of **2.5 emails/second** (`5 senders / 2 sec`).
@@ -418,7 +417,7 @@ The standalone script (`npm run benchmark`) is an **isolated in-memory microbenc
 
 1. **Google OAuth & Secure Cookie Sessions**: Authenticated via Google OAuth 2.0 with cryptographic state validation and signed HTTP-only JWT session cookies. The frontend client contains no `localStorage` token storage; all API requests use browser-managed secure cookies with `credentials: 'include'`.
 2. **Ethereal Test Senders**: Test accounts are generated dynamically on startup/seeding (`npm run seed:senders`) rather than using production SMTP credentials.
-3. **UTC Hourly Windows**: Hourly limits reset at the start of each UTC hour (e.g. `14:00:00 UTC`), rather than on a rolling 60-minute sliding window.
+3. **UTC Hourly Windows & 2x Boundary Burst Mitigation**: Hourly limits reset at the start of each UTC hour (e.g. `14:00:00 UTC`). In naive fixed-window counters, a client sending its entire quota at 13:59:59 and again at 14:00:01 could burst 2x the hourly quota across the boundary. In HyperSend, this burst is strictly mitigated by the **per-sender minimum delay gate (`gap:{senderId}`)**, which acts as a leaky-bucket rate smoother. Even across hourly window transitions, dispatches are bounded by the mandatory minimum delay (e.g., 2,000 ms), guaranteeing that no sender can burst more than 1 email every 2 seconds. (For systems requiring rolling quotas without fixed boundaries, a Redis Sorted Set Sliding Window Log (`ZADD` + `ZREMRANGEBYSCORE`) can be configured, trading off slightly higher memory overhead).
 4. **At-Least-Once Delivery & Dual-Write Mitigation (Redis Dispatch Ledger)**: Sending an email via SMTP is an external network operation that cannot be joined into an atomic two-phase commit (2PC) with PostgreSQL. This introduces a classic dual-write boundary:
    - **Mitigation (Redis Dispatch Ledger)**: To minimize duplicate dispatches if a worker process terminates or PostgreSQL experiences lock contention immediately post-SMTP, the worker records an atomic dispatch receipt in Redis (`dispatched:${emailId}`) before updating the database. The background reconciler (`recoverStaleProcessingEmails`) inspects this ledger before resetting any stale `processing` row; if the receipt exists, it finalizes status directly to `sent` rather than re-queueing.
    - **Residual At-Least-Once Risk**: The Redis ledger is a best-effort mitigation layer. If Redis is unreachable during the post-SMTP window AND all 3 PostgreSQL update retries fail, the dispatch receipt cannot be recorded. In this worst-case dual-failure scenario, the reconciler resets the row after the stale timeout, resulting in at-least-once re-delivery.

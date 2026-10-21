@@ -327,7 +327,12 @@ describe('Critical Failure, Concurrency, and Recovery Scenarios', () => {
     // Test normal startup recovery
     vi.spyOn(prisma.email, 'findMany').mockResolvedValue([]);
     const summary = await runStartupRecovery();
-    expect(summary).toEqual({ staleRecovered: 0, orphanedRequeued: 0, failedRetried: 0 });
+    expect(summary).toEqual({
+      staleRecovered: 0,
+      orphanedRequeued: 0,
+      redisLostRecovered: 0,
+      failedRetried: 0,
+    });
 
     // Test non-P2021 errors are propagated
     vi.spyOn(prisma.email, 'findMany').mockRejectedValue(new Error('Fatal DB connection error'));
@@ -409,4 +414,100 @@ describe('Critical Failure, Concurrency, and Recovery Scenarios', () => {
     const queued = addBulkSpy.mock.calls[0][0];
     expect(queued[0].data.emailId).toBe('failed-email-timeout-1');
   });
+
+  it('Scenario 12: Recovers scheduled emails lost from Redis memory/queue on Redis restart/crash', async () => {
+    const { recoverLostRedisScheduledEmails } = await import('../services/requeueService.js');
+
+    const lostRedisEmail = {
+      id: 'lost-redis-email-1',
+      status: EmailStatus.scheduled,
+      enqueuedAt: new Date(Date.now() - 300000), // marked enqueued 5 mins ago
+      scheduledAt: new Date(Date.now() - 180000), // overdue by 3 mins
+    };
+
+    vi.spyOn(prisma.email, 'findMany').mockResolvedValueOnce([lostRedisEmail] as any);
+    // BullMQ job does not exist in Redis (lost on restart)
+    vi.spyOn(emailQueue, 'getJob').mockResolvedValueOnce(undefined as any);
+    const addBulkSpy = vi.spyOn(emailQueue, 'addBulk').mockResolvedValue([] as any);
+    const updateManySpy = vi.spyOn(prisma.email, 'updateMany').mockResolvedValue({ count: 1 });
+
+    const recoveredCount = await recoverLostRedisScheduledEmails(120000);
+
+    expect(recoveredCount).toBe(1);
+    expect(addBulkSpy).toHaveBeenCalledTimes(1);
+    expect(addBulkSpy).toHaveBeenCalledWith([
+      expect.objectContaining({
+        name: 'send-email',
+        data: { emailId: 'lost-redis-email-1' },
+        opts: expect.objectContaining({ delay: 0 }),
+      }),
+    ]);
+    expect(updateManySpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: { in: ['lost-redis-email-1'] } },
+      })
+    );
+  });
+
+  it('Scenario 13: Leaves scheduled email untouched if BullMQ job still exists in Redis', async () => {
+    const { recoverLostRedisScheduledEmails } = await import('../services/requeueService.js');
+
+    const stillQueuedEmail = {
+      id: 'queued-email-2',
+      status: EmailStatus.scheduled,
+      enqueuedAt: new Date(Date.now() - 300000),
+      scheduledAt: new Date(Date.now() - 180000),
+    };
+
+    vi.spyOn(prisma.email, 'findMany').mockResolvedValueOnce([stillQueuedEmail] as any);
+    // BullMQ job still exists in Redis
+    vi.spyOn(emailQueue, 'getJob').mockResolvedValueOnce({ id: 'queued-email-2' } as any);
+    const addBulkSpy = vi.spyOn(emailQueue, 'addBulk').mockResolvedValue([] as any);
+
+    const recoveredCount = await recoverLostRedisScheduledEmails(120000);
+
+    expect(recoveredCount).toBe(0);
+    expect(addBulkSpy).not.toHaveBeenCalled();
+  });
+
+  it('Scenario 14: Multi-Worker Concurrency: Worker 2 aborts cleanly when Worker 1 wins atomic SQL claim', async () => {
+    const mockEmailItem = {
+      ...baseEmail,
+      id: 'contested-email-race-1',
+    };
+
+    vi.spyOn(prisma.email, 'findUnique').mockResolvedValue(mockEmailItem as any);
+    vi.spyOn(rateLimiter, 'checkAndAcquireSenderSlot').mockResolvedValue({
+      allowed: true,
+      waitMs: 0,
+      windowKey: '2026092414',
+    });
+    vi.spyOn(rateLimiter, 'releaseHourlySlot').mockResolvedValue(undefined as any);
+
+    const mockSendMail = vi.fn().mockResolvedValue({ messageId: '<race-win-msg>' });
+    vi.spyOn(nodemailer, 'createTransport').mockReturnValue({
+      sendMail: mockSendMail,
+    } as any);
+
+    // Worker 1: executeRaw returns 1 (claim succeeded)
+    const execSpy = vi.spyOn(prisma, '$executeRaw')
+      .mockResolvedValueOnce(1 as any)  // Worker 1 succeeds
+      .mockResolvedValueOnce(0 as any); // Worker 2 loses race (rows updated = 0)
+
+    vi.spyOn(prisma.email, 'update').mockResolvedValue({} as any);
+
+    const job1 = createMockJob('contested-email-race-1');
+    const job2 = createMockJob('contested-email-race-1');
+
+    // Run both workers concurrently
+    await Promise.all([
+      processEmailJob(job1 as any, 'token-1'),
+      processEmailJob(job2 as any, 'token-2'),
+    ]);
+
+    // SendMail should be invoked exactly once by Worker 1
+    expect(mockSendMail).toHaveBeenCalledTimes(1);
+    expect(execSpy).toHaveBeenCalledTimes(2);
+  });
 });
+

@@ -29,8 +29,9 @@ export async function createBatchWithEmails(
   const startTimeMs = startAt.getTime();
   const now = new Date();
 
-  return prisma.$transaction(async (tx) => {
-    const batch = await tx.batch.create({
+  return prisma.$transaction(
+    async (tx) => {
+      const batch = await tx.batch.create({
       data: {
         userId,
         delayMs,
@@ -87,6 +88,10 @@ export async function createBatchWithEmails(
       batch,
       emails: emailData,
     };
+  },
+  {
+    maxWait: 15000,
+    timeout: 60000,
   });
 }
 

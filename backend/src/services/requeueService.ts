@@ -259,14 +259,101 @@ export async function retryTransientFailedEmails(
   return totalRetried;
 }
 
+export async function recoverLostRedisScheduledEmails(
+  overdueMs: number = 120000 // 2 minutes overdue
+): Promise<number> {
+  const overdueThreshold = new Date(Date.now() - overdueMs);
+  let totalRequeued = 0;
+
+  while (true) {
+    let pendingChunk;
+    try {
+      pendingChunk = await prisma.email.findMany({
+        where: {
+          status: 'scheduled',
+          enqueuedAt: {
+            not: null,
+          },
+          scheduledAt: {
+            lt: overdueThreshold,
+          },
+        },
+        take: RECOVERY_CHUNK_SIZE,
+        orderBy: {
+          scheduledAt: 'asc',
+        },
+      });
+    } catch (err: unknown) {
+      const error = err as { code?: string };
+      if (error?.code === 'P2021') {
+        return 0;
+      }
+      throw err;
+    }
+
+    if (pendingChunk.length === 0) {
+      break;
+    }
+
+    const missingJobs: typeof pendingChunk = [];
+    for (const email of pendingChunk) {
+      try {
+        const job = await emailQueue.getJob(email.id);
+        if (!job) {
+          missingJobs.push(email);
+        }
+      } catch (redisErr) {
+        logger.warn({ emailId: email.id, err: redisErr }, 'Failed to check BullMQ job existence');
+      }
+    }
+
+    if (missingJobs.length > 0) {
+      const jobs = missingJobs.map((email) => ({
+        name: 'send-email',
+        data: { emailId: email.id },
+        opts: {
+          jobId: email.id,
+          delay: 0,
+        },
+      }));
+
+      await emailQueue.addBulk(jobs);
+
+      await prisma.email.updateMany({
+        where: {
+          id: { in: missingJobs.map((e) => e.id) },
+        },
+        data: {
+          enqueuedAt: new Date(),
+        },
+      });
+
+      totalRequeued += missingJobs.length;
+      logger.info(
+        { count: missingJobs.length },
+        'Re-enqueued scheduled emails missing from Redis (recovered after Redis restart/data loss)'
+      );
+    }
+
+    if (pendingChunk.length < RECOVERY_CHUNK_SIZE) {
+      break;
+    }
+  }
+
+  return totalRequeued;
+}
+
 export async function runStartupRecovery(): Promise<{
   staleRecovered: number;
   orphanedRequeued: number;
+  redisLostRecovered: number;
   failedRetried: number;
 }> {
   const staleRecovered = await recoverStaleProcessingEmails();
   const orphanedRequeued = await requeueOrphanedEmails();
+  const redisLostRecovered = await recoverLostRedisScheduledEmails();
   const failedRetried = await retryTransientFailedEmails();
-  return { staleRecovered, orphanedRequeued, failedRetried };
+  return { staleRecovered, orphanedRequeued, redisLostRecovered, failedRetried };
 }
+
 

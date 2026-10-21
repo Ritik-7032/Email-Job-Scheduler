@@ -360,5 +360,56 @@ describe('Worker Lifecycle and Job Processing Engine', () => {
     expect(sentHtml).toContain('&lt;iframe');
     expect(sentHtml).toContain('<b>Bold announcement</b>');
   });
+
+  it('records dispatch in durable Redis ledger after SMTP acceptance', async () => {
+    const { redisClient } = await import('../lib/redis.js');
+
+    vi.spyOn(prisma.email, 'findUnique').mockResolvedValue(mockEmail as any);
+    vi.spyOn(rateLimiter, 'checkAndAcquireSenderSlot').mockResolvedValue({
+      allowed: true,
+      waitMs: 0,
+      windowKey: '2026092414',
+    });
+    vi.spyOn(prisma, '$executeRaw').mockResolvedValue(1 as any);
+
+    vi.spyOn(nodemailer, 'createTransport').mockReturnValue({
+      sendMail: vi.fn().mockResolvedValue({ messageId: '<ledger-msg-id-1>' }),
+    } as any);
+    vi.spyOn(nodemailer, 'getTestMessageUrl').mockReturnValue('https://ethereal.email/test/1' as any);
+    vi.spyOn(prisma.email, 'update').mockResolvedValue({} as any);
+
+    const originalSet = redisClient.set;
+    const redisSetSpy = vi.fn().mockResolvedValue('OK');
+    (redisClient as any).set = redisSetSpy;
+    (redisClient as any).status = 'ready';
+
+    try {
+      const mockJob = createMockJob(0, 3);
+      await processEmailJob(mockJob as any, 'token');
+
+      expect(redisSetSpy).toHaveBeenCalledWith(
+        'dispatched:email-123',
+        expect.stringContaining('<ledger-msg-id-1>'),
+        'EX',
+        86400 * 7
+      );
+    } finally {
+      (redisClient as any).set = originalSet;
+      (redisClient as any).status = 'close';
+    }
+  });
+
+  it('createEmailWorker initializes BullMQ worker with failure and error event handlers', async () => {
+    const { createEmailWorker } = await import('../workers/emailWorker.js');
+    const worker = createEmailWorker();
+    expect(worker).toBeDefined();
+
+    // Trigger failure handler
+    worker.emit('failed', { id: 'job-err-1' } as any, new Error('SMTP Timeout'));
+    worker.emit('error', new Error('Redis socket closed'));
+
+    await worker.close();
+  });
 });
+
 
