@@ -43,7 +43,6 @@ describe('Batch Staggering and Queue Job Dispatching', () => {
     };
 
     const mockCreatedEmails = recipients.map((r, i) => {
-      const senderSlot = Math.floor(i / mockSenders.length);
       return {
         id: `email-${i}`,
         userId: 'user-1',
@@ -52,7 +51,7 @@ describe('Batch Staggering and Queue Job Dispatching', () => {
         recipient: r,
         subject: 'Test Subject',
         body: 'Test Body',
-        scheduledAt: new Date(startAt.getTime() + senderSlot * delayMs),
+        scheduledAt: new Date(startAt.getTime() + i * delayMs),
         sentAt: null,
         status: EmailStatus.scheduled,
         attempts: 0,
@@ -90,11 +89,10 @@ describe('Batch Staggering and Queue Job Dispatching', () => {
     });
 
     expect(result.emails.length).toBe(3);
-    // Recipients 0 and 1 belong to sender-1 and sender-2 respectively at slot 0 (startAt)
+    // Recipients spaced sequentially by delayMs (2000ms)
     expect(result.emails[0].scheduledAt.getTime()).toBe(startAt.getTime());
-    expect(result.emails[1].scheduledAt.getTime()).toBe(startAt.getTime());
-    // Recipient 2 belongs to sender-1 at slot 1 (startAt + 2000)
-    expect(result.emails[2].scheduledAt.getTime()).toBe(startAt.getTime() + 2000);
+    expect(result.emails[1].scheduledAt.getTime()).toBe(startAt.getTime() + 2000);
+    expect(result.emails[2].scheduledAt.getTime()).toBe(startAt.getTime() + 4000);
 
     expect(result.emails[0].senderId).toBe('sender-1');
     expect(result.emails[1].senderId).toBe('sender-2');
@@ -118,7 +116,6 @@ describe('Batch Staggering and Queue Job Dispatching', () => {
     };
 
     const mockEmails = recipients.map((r, i) => {
-      const senderSlot = Math.floor(i / mockSenders.length);
       return {
         id: `uuid-email-${i}`,
         userId: 'user-1',
@@ -127,7 +124,7 @@ describe('Batch Staggering and Queue Job Dispatching', () => {
         recipient: r,
         subject: 'Subject',
         body: 'Body',
-        scheduledAt: new Date(startAt.getTime() + senderSlot * delayMs),
+        scheduledAt: new Date(startAt.getTime() + i * delayMs),
         sentAt: null,
         status: EmailStatus.scheduled,
         attempts: 0,
@@ -172,16 +169,17 @@ describe('Batch Staggering and Queue Job Dispatching', () => {
     const queuedJobs = addBulkSpy.mock.calls[0][0];
 
     expect(queuedJobs.length).toBe(3);
-    // Recipients 0 and 1 belong to sender-1 and sender-2 respectively at slot 0 (startAt)
+    // Recipient 0 at slot 0 (startAt)
     expect(queuedJobs[0].opts.jobId).toBe(queuedJobs[0].data.emailId);
     expect(queuedJobs[0].opts.delay).toBeGreaterThanOrEqual(9000);
 
+    // Recipient 1 at slot 1 (startAt + 3000ms)
     expect(queuedJobs[1].opts.jobId).toBe(queuedJobs[1].data.emailId);
-    expect(queuedJobs[1].opts.delay).toBeGreaterThanOrEqual(9000);
+    expect(queuedJobs[1].opts.delay).toBeGreaterThanOrEqual(12000);
 
-    // Recipient 2 belongs to sender-1 at slot 1 (startAt + delayMs)
+    // Recipient 2 at slot 2 (startAt + 6000ms)
     expect(queuedJobs[2].opts.jobId).toBe(queuedJobs[2].data.emailId);
-    expect(queuedJobs[2].opts.delay).toBeGreaterThanOrEqual(12000);
+    expect(queuedJobs[2].opts.delay).toBeGreaterThanOrEqual(15000);
 
     expect(updateManySpy).toHaveBeenCalledWith(
       expect.objectContaining({
