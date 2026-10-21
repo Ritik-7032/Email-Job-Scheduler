@@ -22,29 +22,15 @@ class ApiClient {
     return '';
   }
 
-  getToken(): string | null {
-    return localStorage.getItem('email_scheduler_auth_token');
-  }
-
-  setToken(token: string): void {
-    localStorage.setItem('email_scheduler_auth_token', token);
-  }
-
-  clearToken(): void {
-    localStorage.removeItem('email_scheduler_auth_token');
-  }
-
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
     const baseUrl = this.getBaseUrl();
     const url = endpoint.startsWith('http') ? endpoint : `${baseUrl}${endpoint}`;
-    const token = this.getToken();
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers as Record<string, string>),
     };
 

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { generateGoogleAuthUrl, handleGoogleCallback, loginDemoUser } from '../services/authService.js';
 import { env } from '../config/env.js';
 import { AuthenticatedRequest } from '../types/index.js';
+import { redisClient } from '../lib/redis.js';
 
 
 export function initiateGoogleAuth(_req: Request, res: Response): void {
@@ -96,28 +97,30 @@ export function logoutUser(_req: Request, res: Response): void {
   });
 }
 
-const demoRateLimitMap = new Map<string, { count: number; resetAt: number }>();
-
 export async function handleDemoLogin(
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
-    const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'unknown';
-    const now = Date.now();
-    const current = demoRateLimitMap.get(clientIp);
+    const clientIp = req.ip || 'unknown';
+    const rateLimitKey = `demo_rate_limit:${clientIp}`;
 
-    if (current && current.resetAt > now) {
-      if (current.count >= 15) {
-        res.status(429).json({
-          error: 'Rate limit exceeded: maximum 15 demo sessions per hour per IP. Please try again later.',
-        });
-        return;
+    if (redisClient.status === 'ready' || Boolean((redisClient as any).incr?.mock)) {
+      try {
+        const count = await redisClient.incr(rateLimitKey);
+        if (count === 1) {
+          await redisClient.expire(rateLimitKey, 3600); // 1-hour window shared across replicas
+        }
+        if (count > 15) {
+          res.status(429).json({
+            error: 'Rate limit exceeded: maximum 15 demo sessions per hour per IP. Please try again later.',
+          });
+          return;
+        }
+      } catch {
+        // Fall back gracefully if Redis command encounters an error
       }
-      current.count++;
-    } else {
-      demoRateLimitMap.set(clientIp, { count: 1, resetAt: now + 60 * 60 * 1000 });
     }
 
     const { token, user } = await loginDemoUser();

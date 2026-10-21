@@ -95,7 +95,7 @@ The system schedules and sends email batches with per-sender minimum delays and 
 
 - **Backend**: Node.js, TypeScript, Express, BullMQ, ioredis, PostgreSQL, Prisma, Nodemailer, Zod, google-auth-library, jsonwebtoken, Pino.
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Lucide icons, Nginx.
-- **Testing**: Vitest, Supertest (36/36 Unit Tests).
+- **Testing**: Vitest, Supertest (37/37 Unit Tests across 5 test suites).
 - **Infra**: Docker Compose (Full-stack containerization with isolated network & persistent volumes).
 
 ---
@@ -387,36 +387,42 @@ WHERE "id" = $id
 
 The system is architected to handle bulk batches of 1,000+ recipients reliably without blocking the Express event loop, exceeding database parameter limits, or saturating Redis command buffers.
 
-### Ingestion Performance & Microbenchmark (1,000 Recipients)
+### Ingestion Performance (In-Memory Microbenchmark - 1,000 Recipients)
 
-The standalone benchmark script (`npm run benchmark`) isolates the in-memory ingestion pipeline (Zod schema validation, timestamp staggering calculation, chunk partitioning, and BullMQ payload serialization) to prove zero event-loop blocking:
+The standalone script (`npm run benchmark`) is an **isolated in-memory microbenchmark** evaluating the CPU and serialization overhead of the ingestion pipeline prior to I/O (Zod validation, slot calculation, chunk partitioning, and BullMQ payload serialization):
 
 | Benchmark Step | Mechanism | Measured Duration | Resource Impact |
 | :--- | :--- | :--- | :--- |
-| **Zod Validation & Sanitation** | Schema bounds checking & RFC 5322 parsing | `~2.6 ms` | Heap: +0.97 MB |
-| **Staggering & Sender Distribution** | In-memory UTC offsets & round-robin assignment | `~2.3 ms` | ~430,000 ops/sec |
-| **Chunk Partitioning** | Partitions into 1,000-slice arrays (DB parameter safeguard) | `~0.02 ms` | Parameter guard (< 10k params) |
-| **BullMQ Payload Serialization** | Bulk delayed job payload construction & serialization | `~1.1 ms` | Redis payload: ~191 KB total (~191 bytes/job) |
-| **Total In-Memory Pipeline Latency** | **Execution prior to I/O dispatch** | **~6.0 ms** | **Peak heap: ~10.2 MB** |
+| **Zod Validation & Sanitation** | Schema bounds checking & RFC 5322 parsing | `~3.1 ms` | Heap: +0.96 MB |
+| **Staggering & Sender Distribution** | In-memory UTC offsets & sender slot calculation | `~1.2 ms` | ~830,000 ops/sec |
+| **Chunk Partitioning** | Partitions into 1,000-slice arrays (DB parameter guard) | `~0.01 ms` | Parameter guard (< 10k params) |
+| **BullMQ Payload Preparation** | Bulk delayed job payload construction | `~2.4 ms` | Redis payload: ~190 KB total (~190 bytes/job) |
+| **Total In-Memory Pipeline Latency** | **Execution prior to I/O dispatch** | **~6.7 ms** | **Peak heap: ~10.2 MB** |
 
-When backed by active database and cache instances, the asynchronous ingestion endpoint (`POST /api/emails/schedule`) commits the chunked `$transaction` and calls `queue.addBulk()`, returning HTTP 201 within ~340ms round-trip latency.
+> [!NOTE]
+> This microbenchmark measures CPU-bound preprocessing in memory. End-to-end HTTP request completion (`POST /api/emails/schedule`) includes network transit, PostgreSQL `$transaction` commit time, and Redis `queue.addBulk()` round-trips (~200–350ms depending on database location), while final email delivery latency is governed by SMTP server socket response times.
 
 ### Worker Throughput & Rate Control Dynamics
 1. **Non-blocking API Design**: The API server immediately responds with `{ batchId, count: 1000 }` after queue dispatch. Dispatching emails over SMTP is handled purely asynchronously by decoupled worker processes.
 2. **Buffer Saturation Prevention**: Bulk inserts and BullMQ enqueuing are chunked in slices of 1,000 to keep memory flat and prevent Redis pipeline timeouts.
-3. **Throughput Scaling**: Staggering is calculated per sender account (`slot = Math.floor(index / senders.length)`). With 5 active senders and a per-sender delay of 2,000ms, all 5 senders dispatch concurrently at `t = 0`, then at `t = 2000ms`, achieving a governed aggregate throughput of **2.5 emails/second** (up to 9,000 emails/hour aggregate across senders), smoothly throttled by the atomic Redis Lua gate.
+3. **Throughput Scaling & Dual Rate Boundaries**:
+   - **Burst Dispatch Rate (Inter-Email Delay)**: Staggering is calculated per sender account (`slot = Math.floor(index / senders.length)`). At the configured `DEFAULT_DELAY_MS = 2000` (2 seconds), each sender spaces its dispatches by 2 seconds. Across 5 active senders dispatching in parallel with `WORKER_CONCURRENCY = 5`, this achieves a peak burst rate of **2.5 emails/second** (`5 senders / 2 sec`).
+   - **Sustained Hourly Quota**: Sustained throughput is governed by the per-sender hourly quota (`DEFAULT_HOURLY_LIMIT = 200` emails/hour/sender). Across 5 senders, this enforces a strict aggregate ceiling of **1,000 emails/hour**. Once a sender exhausts its 200 emails within a UTC hour, additional jobs for that sender are delayed to the next UTC hour window by the atomic Redis Lua script. (A theoretical ceiling of 9,000 emails/hour would only be reached if the per-sender hourly quota were configured to 1,800 emails/hour).
 
 ---
 
 ## Assumptions and Shortcuts / Trade-Offs
 
-1. **Google OAuth & Secure Cookie Sessions**: Authenticated via Google OAuth 2.0 with cryptographic state validation and signed HTTP-only JWT session cookies (no localStorage tokens).
+1. **Google OAuth & Secure Cookie Sessions**: Authenticated via Google OAuth 2.0 with cryptographic state validation and signed HTTP-only JWT session cookies. The frontend client contains no `localStorage` token storage; all API requests use browser-managed secure cookies with `credentials: 'include'`.
 2. **Ethereal Test Senders**: Test accounts are generated dynamically on startup/seeding (`npm run seed:senders`) rather than using production SMTP credentials.
 3. **UTC Hourly Windows**: Hourly limits reset at the start of each UTC hour (e.g. `14:00:00 UTC`), rather than on a rolling 60-minute sliding window.
-4. **At-Least-Once Delivery & Dual-Write Mitigation (Redis Dispatch Ledger)**: Sending an email via SMTP is an external network operation that cannot be joined into an atomic two-phase commit (2PC) with PostgreSQL. To eliminate duplicate sends if a worker process terminates or PostgreSQL experiences lock contention immediately after SMTP accepts the message, the worker writes an atomic dispatch confirmation to a Redis ledger (`dispatched:${emailId}`) before updating the database. The background reconciler (`recoverStaleProcessingEmails`) inspects this ledger before resetting any stale `processing` row: if the receipt exists, it finalizes status directly to `sent` rather than re-queueing. As an additional defense-in-depth safeguard for downstream MTAs, outbound emails declare a deterministic RFC 5322 header: `Message-ID: <${emailId}@scheduler.internal>`.
+4. **At-Least-Once Delivery & Dual-Write Mitigation (Redis Dispatch Ledger)**: Sending an email via SMTP is an external network operation that cannot be joined into an atomic two-phase commit (2PC) with PostgreSQL. This introduces a classic dual-write boundary:
+   - **Mitigation (Redis Dispatch Ledger)**: To minimize duplicate dispatches if a worker process terminates or PostgreSQL experiences lock contention immediately post-SMTP, the worker records an atomic dispatch receipt in Redis (`dispatched:${emailId}`) before updating the database. The background reconciler (`recoverStaleProcessingEmails`) inspects this ledger before resetting any stale `processing` row; if the receipt exists, it finalizes status directly to `sent` rather than re-queueing.
+   - **Residual At-Least-Once Risk**: The Redis ledger is a best-effort mitigation layer. If Redis is unreachable during the post-SMTP window AND all 3 PostgreSQL update retries fail, the dispatch receipt cannot be recorded. In this worst-case dual-failure scenario, the reconciler resets the row after the stale timeout, resulting in at-least-once re-delivery.
+   - **Downstream MTA Deduplication**: As a final defense-in-depth safeguard, outbound emails declare a deterministic RFC 5322 header: `Message-ID: <${emailId}@scheduler.internal>` so downstream Mail Transfer Agents (MTAs) and recipient mailboxes can deduplicate identical deliveries.
 5. **Content Sanitization & Safe Markdown**: Rather than relying on fragile regex HTML tag-stripping, the body pipeline strictly escapes all raw HTML input (`&`, `<`, `>`, `"`, `'`) before converting markdown constructs (`**bold**`, `*italic*`, `~~strikethrough~~`, `![alt](url)`, `📎 [Attachment: name](url)`). Images and links are strictly validated against allowlisted protocols (`http://` and `https://`), completely neutralizing arbitrary `<script>`, `<iframe>`, inline `onload/onerror` handlers, and `javascript:` URIs.
 6. **Process Model & Cloud SMTP Simulation**: In Docker Compose and multi-container environments, the API server (`src/server.ts`) and Queue Worker (`src/worker.ts`) run as distinct, decoupled OS processes (`SEPARATE_WORKER=true`). On single-container deployments (such as Render's free tier), `server.ts` boots an internal worker runner. Furthermore, because cloud free tiers (e.g. Render) enforce strict outbound firewalls blocking external SMTP connections (port 587), `DEMO_SIMULATE_SMTP=true` is enabled on Render to simulate message delivery and test queue state transitions without socket timeouts. Real Ethereal SMTP dispatch operates natively in Docker and unrestricted environments.
-7. **Isolated Demo Recruiter Sessions**: Public demo logins (`POST /api/auth/demo`) create isolated, unique demo accounts with rate limiting (max 15 sessions/hour per IP), ensuring that recruiters evaluating the live app do not collide with or overwrite each other's campaigns.
+7. **Isolated Demo Recruiter Sessions & Shared Rate Limiting**: Public demo logins (`POST /api/auth/demo`) create isolated, unique ephemeral demo accounts (`demo-guest-*`) with Redis-backed IP rate limiting (maximum 15 sessions/hour per IP, resolving client IPs via Express trusted reverse-proxy headers), ensuring that recruiters evaluating the live app do not collide with or overwrite each other's campaigns across instances.
 8. **Clean Distribution Packaging**: Run `npm run package:zip` to export a clean, recruiter-ready distribution archive containing strictly git-tracked files (preventing accidental bundling of local `.env` secrets or database dumps).
 
 ---
