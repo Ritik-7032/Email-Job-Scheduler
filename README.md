@@ -383,7 +383,7 @@ WHERE "id" = $id
 ### Enqueue, Crash Recovery & Redis Data Loss Resilience
 - **API Crash Mid-Ingestion (`enqueuedAt = null`)**: If the API server crashes after committing database rows but before BullMQ enqueueing finishes, rows remain with `enqueuedAt = null`. On API boot and via `npm run requeue`, `requeueOrphanedEmails()` fetches in chunks of 500 to re-enqueue any volume of orphaned records with their stable UUID `jobId`.
 - **Worker Crash Mid-Execution (Stale `processing`)**: `recoverStaleProcessingEmails()` inspects rows stuck in `processing` beyond `STALE_PROCESSING_MS`. If a worker died post-SMTP, it finalizes `sent` using the Redis dispatch ledger; otherwise, it resets status to `scheduled` (or `failed` if attempts $\ge 3$).
-- **Redis Crash / Restart with Dropped Jobs (`recoverLostRedisScheduledEmails`)**: If Redis restarts or drops in-memory queue jobs (e.g. within an AOF fsync window), scheduled emails in PostgreSQL already had `enqueuedAt` populated and would otherwise remain permanently stalled. HyperSend's reconciler actively queries overdue scheduled emails (`scheduledAt < now - 2 min`) and checks `emailQueue.getJob(email.id)`. If the job is missing from Redis, it automatically re-enqueues the job into BullMQ with `delay = 0`, restoring guaranteed delivery across Redis restarts.
+- **Redis Crash / Restart with Dropped Jobs (`recoverLostRedisScheduledEmails`)**: If Redis restarts or drops in-memory queue jobs (e.g. within an AOF fsync window), scheduled emails in PostgreSQL already had `enqueuedAt` populated and would otherwise remain permanently stalled. HyperSend's reconciler actively queries overdue scheduled emails (`scheduledAt < now - 2 min`) and checks `emailQueue.getJob(email.id)`. If the job is missing from Redis, it automatically re-enqueues the job into BullMQ with `delay = 0`, restoring at-least-once delivery recovery across Redis restarts.
 
 ---
 
@@ -399,10 +399,10 @@ To provide complete transparency between CPU-bound serialization and network/dat
 | :--- | :---: | :---: | :--- |
 | **In-Memory CPU Preprocessing** | `~6.7 ms` | `~65 ms` | Zod RFC 5322 parsing, sender staggering, chunk partitioning, BullMQ payload formatting |
 | **Real End-to-End API Dispatch** (PostgreSQL + BullMQ) | **1.78s** *(median)* | **13.26s** *(median)* | Interactive `$transaction`, 1,000-row `createMany` chunks, TLS roundtrips, Redis `addBulk` |
-| **API Response Behavior** | Immediate | Immediate | API returns `{ batchId, count }` immediately; worker processes dispatch asynchronously |
+| **API Response Lifecycle** | `~1.78s` | `~13.26s` | Returns HTTP 200 after DB ingestion + BullMQ bulk enqueue; SMTP dispatch is fully async |
 
 > [!NOTE]
-> The in-memory microbenchmark (`npm run benchmark`) isolates the pure serialization and CPU overhead (~6.7 ms for 1,000 emails). Real-world end-to-end API latency includes TLS connection negotiation, Prisma interactive transactions, parameter verification, and Redis bulk enqueue writes (~1.78s for 1,000 emails and ~13.2s for 10,000 emails over remote serverless PostgreSQL with 30s transaction timeout safeguards).
+> The in-memory microbenchmark (`npm run benchmark`) isolates the pure serialization and CPU overhead (~6.7 ms for 1,000 emails). Real-world end-to-end API latency includes TLS connection negotiation, Prisma interactive transactions, parameter verification, and Redis bulk enqueue writes (~1.78s for 1,000 emails and ~13.2s for 10,000 emails over remote serverless PostgreSQL with 60s transaction timeout safeguards, maxWait: 15s).
 
 ### Worker Throughput & Rate Control Dynamics
 1. **Non-blocking API Design**: The API server immediately responds with `{ batchId, count }` after queue dispatch. Dispatching emails over SMTP is handled purely asynchronously by decoupled worker processes.
