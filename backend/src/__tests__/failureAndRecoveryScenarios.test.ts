@@ -327,7 +327,7 @@ describe('Critical Failure, Concurrency, and Recovery Scenarios', () => {
     // Test normal startup recovery
     vi.spyOn(prisma.email, 'findMany').mockResolvedValue([]);
     const summary = await runStartupRecovery();
-    expect(summary).toEqual({ staleRecovered: 0, orphanedRequeued: 0 });
+    expect(summary).toEqual({ staleRecovered: 0, orphanedRequeued: 0, failedRetried: 0 });
 
     // Test non-P2021 errors are propagated
     vi.spyOn(prisma.email, 'findMany').mockRejectedValue(new Error('Fatal DB connection error'));
@@ -374,5 +374,39 @@ describe('Critical Failure, Concurrency, and Recovery Scenarios', () => {
     } finally {
       (redisClient as any).get = originalGet;
     }
+  });
+
+  it('Scenario 11: Automatically retries transiently failed emails (e.g. connection timeout) after cooldown period', async () => {
+    const { retryTransientFailedEmails } = await import('../services/requeueService.js');
+
+    const transientFailedEmail = {
+      id: 'failed-email-timeout-1',
+      status: EmailStatus.failed,
+      attempts: 3,
+      errorMessage: 'Connection timeout',
+      updatedAt: new Date(Date.now() - 600000), // 10 minutes ago
+      scheduledAt: new Date(),
+    };
+
+    vi.spyOn(prisma.email, 'findMany').mockResolvedValueOnce([transientFailedEmail] as any);
+    const updateManySpy = vi.spyOn(prisma.email, 'updateMany').mockResolvedValue({ count: 1 });
+    const addBulkSpy = vi.spyOn(emailQueue, 'addBulk').mockResolvedValue([] as any);
+
+    const retriedCount = await retryTransientFailedEmails(300000);
+
+    expect(retriedCount).toBe(1);
+    expect(updateManySpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: { in: ['failed-email-timeout-1'] } },
+        data: expect.objectContaining({
+          status: 'scheduled',
+          attempts: 0,
+          errorMessage: null,
+        }),
+      })
+    );
+    expect(addBulkSpy).toHaveBeenCalledTimes(1);
+    const queued = addBulkSpy.mock.calls[0][0];
+    expect(queued[0].data.emailId).toBe('failed-email-timeout-1');
   });
 });

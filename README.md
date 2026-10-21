@@ -1,8 +1,8 @@
 # HyperSend
 
 [![CI](https://github.com/Ritik-7032/Email-Job-Scheduler/actions/workflows/ci.yml/badge.svg)](https://github.com/Ritik-7032/Email-Job-Scheduler/actions/workflows/ci.yml)
-![Test Suite](https://img.shields.io/badge/Vitest-45%2F45%20Passed-brightgreen)
-![Coverage](https://img.shields.io/badge/Coverage-68.7%25%20Lines%20%7C%2071.7%25%20Branch-blue)
+![Test Suite](https://img.shields.io/badge/Vitest-46%2F46%20Passed-brightgreen)
+![Coverage](https://img.shields.io/badge/Coverage-69.8%25%20Lines%20%7C%2071.1%25%20Branch-blue)
 ![Core Engine](https://img.shields.io/badge/Core%20Queue%20%26%20Limiter-100%25-brightgreen)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)
 ![Node](https://img.shields.io/badge/Node.js-%3E%3D20-green)
@@ -96,7 +96,7 @@ The system schedules and sends email batches with per-sender minimum delays and 
 
 - **Backend**: Node.js, TypeScript, Express, BullMQ, ioredis, PostgreSQL, Prisma, Nodemailer, Zod, google-auth-library, jsonwebtoken, Pino.
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Lucide icons, Nginx.
-- **Testing**: Vitest, Supertest (45/45 Unit & Integration Tests across 6 test suites).
+- **Testing**: Vitest, Supertest (46/46 Unit & Integration Tests across 6 test suites).
 - **Infra**: Docker Compose (Full-stack containerization with isolated network & persistent volumes).
 
 ---
@@ -191,14 +191,14 @@ npm --prefix backend run test:coverage
 | Module / Component | Line Coverage | Branch Coverage | Focus Area |
 | :--- | :---: | :---: | :--- |
 | **Rate Limiter Lua Script** (`rateLimiter.ts`) | 100% | 100% | Atomic gap TTL checks, UTC hourly resets, slot reservations |
-| **Requeue & Crash Recovery** (`requeueService.ts`) | 99.4% | 88.6% | Orphaned job requeuing, stale processing reconciliations, P2021 error safety |
+| **Requeue & Crash Recovery** (`requeueService.ts`) | 96.9% | 87.8% | Orphaned job requeuing, stale processing reconciliations, automatic transient timeout retries |
 | **Input Validator** (`scheduleValidator.ts`) | 100% | 100% | Bounds checking, recipient limits, RFC 5322 validation |
 | **Email Queue Initialization** (`emailQueue.ts`) | 100% | 100% | BullMQ connection and queue options |
 | **CSRF Defense & Auth Middleware** (`csrf.ts`, `auth.ts`) | 82.5% | 73.1% | OWASP Origin verification, safe method bypass, JWT cookie parsing |
 | **Express Application Setup** (`app.ts`) | 97.2% | 88.2% | Deep health probes (`/health`, `/api/health`), CORS allowlist |
-| **Email Worker Processor** (`emailWorker.ts`) | 75.3% | 78.4% | Atomic SQL claims, moveToDelayed handling, retry exhaustion, strict HTML escaping |
-| **Database Transaction Ingestion** (`emailRepository.ts`) | 57.4% | 87.5% | Chunked batch creation, bulk updates, sender slot calculation |
-| **Overall Backend Codebase** | **68.7%** | **71.7%** | Full backend source files (excluding scripts/entrypoints) |
+| **Email Worker Processor** (`emailWorker.ts`) | 75.3% | 74.1% | Atomic SQL claims, moveToDelayed handling, retry exhaustion, strict HTML escaping, cloud fallback |
+| **Database Transaction Ingestion** (`emailRepository.ts`) | 57.1% | 87.5% | Chunked batch creation, bulk updates, sequential sender delay calculation |
+| **Overall Backend Codebase** | **69.8%** | **71.1%** | Full backend source files (excluding scripts/entrypoints) |
 
 ---
 

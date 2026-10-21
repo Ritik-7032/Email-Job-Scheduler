@@ -176,11 +176,97 @@ export async function requeueOrphanedEmails(
   return totalRequeued;
 }
 
+export async function retryTransientFailedEmails(
+  cooldownMs: number = 300000 // 5 minutes cooldown
+): Promise<number> {
+  const retryThreshold = new Date(Date.now() - cooldownMs);
+  let totalRetried = 0;
+
+  while (true) {
+    let failedEmails;
+    try {
+      failedEmails = await prisma.email.findMany({
+        where: {
+          status: 'failed',
+          updatedAt: {
+            lt: retryThreshold,
+          },
+          OR: [
+            { errorMessage: { contains: 'timeout', mode: 'insensitive' } },
+            { errorMessage: { contains: 'ETIMEDOUT', mode: 'insensitive' } },
+            { errorMessage: { contains: 'ECONNREFUSED', mode: 'insensitive' } },
+            { errorMessage: { contains: 'EHOSTUNREACH', mode: 'insensitive' } },
+            { errorMessage: { contains: 'terminated unexpectedly', mode: 'insensitive' } },
+          ],
+        },
+        take: RECOVERY_CHUNK_SIZE,
+        orderBy: {
+          updatedAt: 'asc',
+        },
+      });
+    } catch (err: unknown) {
+      const error = err as { code?: string };
+      if (error?.code === 'P2021') {
+        return 0;
+      }
+      throw err;
+    }
+
+    if (failedEmails.length === 0) {
+      break;
+    }
+
+    const emailIds = failedEmails.map((e) => e.id);
+
+    // Reset status to scheduled with 0 attempts and clear error
+    await prisma.email.updateMany({
+      where: { id: { in: emailIds } },
+      data: {
+        status: 'scheduled',
+        attempts: 0,
+        enqueuedAt: null,
+        errorMessage: null,
+      },
+    });
+
+    const now = Date.now();
+    const jobs = failedEmails.map((email, idx) => ({
+      name: 'send-email',
+      data: { emailId: email.id },
+      opts: {
+        jobId: `${email.id}-retry-${now}-${idx}`,
+        delay: Math.max(0, idx * 2000),
+      },
+    }));
+
+    await emailQueue.addBulk(jobs);
+
+    await prisma.email.updateMany({
+      where: { id: { in: emailIds } },
+      data: { enqueuedAt: new Date() },
+    });
+
+    totalRetried += failedEmails.length;
+
+    if (failedEmails.length < RECOVERY_CHUNK_SIZE) {
+      break;
+    }
+  }
+
+  if (totalRetried > 0) {
+    logger.info({ count: totalRetried }, 'Automatically re-enqueued transiently failed emails');
+  }
+  return totalRetried;
+}
+
 export async function runStartupRecovery(): Promise<{
   staleRecovered: number;
   orphanedRequeued: number;
+  failedRetried: number;
 }> {
   const staleRecovered = await recoverStaleProcessingEmails();
   const orphanedRequeued = await requeueOrphanedEmails();
-  return { staleRecovered, orphanedRequeued };
+  const failedRetried = await retryTransientFailedEmails();
+  return { staleRecovered, orphanedRequeued, failedRetried };
 }
+

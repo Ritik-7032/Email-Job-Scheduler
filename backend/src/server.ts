@@ -42,11 +42,11 @@ async function bootstrap() {
 
     // 3. Startup reconciliation of stale processing records and orphaned queued emails
     runStartupRecovery()
-      .then(({ staleRecovered, orphanedRequeued }) => {
-        if (staleRecovered > 0 || orphanedRequeued > 0) {
+      .then(({ staleRecovered, orphanedRequeued, failedRetried }) => {
+        if (staleRecovered > 0 || orphanedRequeued > 0 || failedRetried > 0) {
           logger.info(
-            { staleRecovered, orphanedRequeued },
-            'Completed startup recovery reconciling stale and orphaned email jobs'
+            { staleRecovered, orphanedRequeued, failedRetried },
+            'Completed startup recovery reconciling stale, orphaned, and transiently failed email jobs'
           );
         }
       })
