@@ -10,11 +10,11 @@ services:
     networks:
       - scheduler-network
     environment:
-      POSTGRES_USER: scheduler_admin
-      POSTGRES_PASSWORD: scheduler_password
+      POSTGRES_USER: ${POSTGRES_USER:-scheduler_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-scheduler_password}
       POSTGRES_DB: scheduler_db
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -31,7 +31,7 @@ services:
       - scheduler-network
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
