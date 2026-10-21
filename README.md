@@ -1,8 +1,8 @@
 # HyperSend
 
 [![CI](https://github.com/Ritik-7032/Email-Job-Scheduler/actions/workflows/ci.yml/badge.svg)](https://github.com/Ritik-7032/Email-Job-Scheduler/actions/workflows/ci.yml)
-![Test Suite](https://img.shields.io/badge/Vitest-56%2F56%20Passed-brightgreen)
-![Coverage](https://img.shields.io/badge/Coverage-78.7%25%20Lines%20%7C%2073.1%25%20Branch-blue)
+![Test Suite](https://img.shields.io/badge/Vitest-60%2F60%20Passed-brightgreen)
+![Coverage](https://img.shields.io/badge/Coverage-79.4%25%20Lines%20%7C%2071.8%25%20Branch-blue)
 ![Core Engine](https://img.shields.io/badge/Core%20Queue%20%26%20Limiter-100%25-brightgreen)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)
 ![Node](https://img.shields.io/badge/Node.js-%3E%3D20-green)
@@ -191,15 +191,15 @@ npm --prefix backend run test:coverage
 | Module / Component | Line Coverage | Branch Coverage | Focus Area |
 | :--- | :---: | :---: | :--- |
 | **Rate Limiter Lua Script** (`rateLimiter.ts`) | 100% | 100% | Atomic gap TTL checks, UTC hourly resets, slot reservations |
-| **Database Transaction Ingestion** (`emailRepository.ts`) | 100% | 100% | Chunked batch creation, bulk updates, sequential sender delay calculation, pagination |
-| **Requeue & Crash Recovery** (`requeueService.ts`) | 95.0% | 86.3% | Orphaned job requeuing, stale processing reconciliations, Redis crash recovery, timeout retries |
-| **Sender Repository & Pool Contention** (`senderRepository.ts`) | 94.6% | 71.4% | Pool exhaustion retries, automatic Ethereal test account seeding |
+| **Database Transaction Ingestion** (`emailRepository.ts`) | 100% | 100% | Single-roundtrip unnest insert (default), chunked fallback, staggering, rollback |
 | **Input Validator** (`scheduleValidator.ts`) | 100% | 100% | Bounds checking, recipient limits, RFC 5322 validation |
 | **Email Queue Initialization** (`emailQueue.ts`) | 100% | 100% | BullMQ connection and queue options |
 | **Express Application Setup** (`app.ts`) | 97.2% | 88.2% | Deep health probes (`/health`, `/api/health`), CORS allowlist |
-| **Email Worker Processor** (`emailWorker.ts`) | 85.5% | 76.6% | Atomic SQL claims, moveToDelayed handling, retry exhaustion, Redis dispatch ledger, event listeners |
+| **Requeue & Crash Recovery** (`requeueService.ts`) | 95.1% | 83.0% | Orphaned job requeuing, stale processing reconciliations, Redis crash recovery, timeout retries |
+| **Sender Repository & Pool Contention** (`senderRepository.ts`) | 94.6% | 71.4% | Pool exhaustion retries, automatic Ethereal test account seeding |
+| **Email Worker Processor** (`emailWorker.ts`) | 85.6% | 71.0% | Atomic SQL claims, moveToDelayed handling, retry exhaustion, Redis dispatch ledger, event listeners |
 | **CSRF Defense & Auth Middleware** (`csrf.ts`, `auth.ts`) | 83.6% | 58.3% | OWASP Origin verification, safe method bypass, JWT cookie parsing |
-| **Overall Backend Codebase** | **78.7%** | **73.1%** | Full backend source files (56 tests across 7 test suites) |
+| **Overall Backend Codebase** | **79.4%** | **71.8%** | Full backend source files (60 tests across 7 test suites) |
 
 ---
 
@@ -422,33 +422,68 @@ The system is architected to handle bulk batches of 1,000+ recipients reliably w
 
 ### Measured Performance: End-to-End vs. In-Memory Microbenchmark
 
-To provide complete transparency between CPU-bound serialization and network/database I/O, latency was measured across both layers:
+To provide complete transparency between CPU-bound serialization and network/database I/O, latency was empirically measured across both layers against remote serverless PostgreSQL (Neon AWS US-East, ping RTT: min 282.7ms, median 344.0ms):
 
-| Layer / Measurement | 1,000 Recipients | 10,000 Recipients | Details & Guarantees |
+| Layer / Pipeline | 1,000 Recipients | 10,000 Recipients | Details & Guarantees |
 | :--- | :---: | :---: | :--- |
 | **In-Memory CPU Preprocessing** | `~6.7 ms` | `~65 ms` | Zod RFC 5322 parsing, sender staggering, chunk partitioning, BullMQ payload formatting |
-| **Real End-to-End API Dispatch** (PostgreSQL + BullMQ) | **1.78s** *(median)* | **13.26s** *(median)* | Interactive `$transaction`, 1,000-row `createMany` chunks, TLS roundtrips, Redis `addBulk` |
-| **API Response Lifecycle** | `~1.78s` | `~13.26s` | Returns HTTP 200 after DB ingestion + BullMQ bulk enqueue; SMTP dispatch is fully async |
+| **Production Single-Roundtrip Unnest (DB Write)** | **1.47s** *(median)* | **2.24s** *(median)* | Single parameterized `INSERT ... SELECT FROM unnest(...)` query inside transaction (12 array params) |
+| **Old Chunked Baseline (DB Write)** | **2.43s** *(median)* | **8.48s** *(median)* | Interactive `$transaction` executing 10 sequential 1,000-row `createMany` queries |
+| **Real End-to-End API Pipeline (Unnest)** | **2.57s** *(median)* | **13.09s** *(median)* | Validation + unnest DB insert + BullMQ bulk enqueue + enqueued status mark (`scheduleEmails`) |
+| **Old End-to-End API Pipeline (Chunked)** | **3.27s** *(median)* | **19.64s** *(median)* | Validation + 10 chunked `createMany` + BullMQ bulk enqueue + enqueued status mark |
 
 > [!NOTE]
-> The in-memory microbenchmark (`npm run benchmark`) isolates the pure serialization and CPU overhead (~6.7 ms for 1,000 emails). Real-world end-to-end API latency includes TLS connection negotiation, Prisma interactive transactions, parameter verification, and Redis bulk enqueue writes (~1.78s for 1,000 emails and ~13.2s for 10,000 emails over remote serverless PostgreSQL with 60s transaction timeout safeguards, maxWait: 15s).
+> The in-memory microbenchmark (`npm run benchmark`) isolates pure CPU/serialization (~6.7 ms for 1,000 emails). Real-world end-to-end API latency includes remote transatlantic TLS connection negotiation, Prisma interactive transactions, parameter verification, and Redis bulk enqueue writes.
 
-### Ingestion Latency Analysis: Prisma Chunking vs. Single-Roundtrip Unnest vs. COPY
+### Ingestion Latency Analysis: Chunked Baseline vs. Single-Roundtrip Unnest (Shipped)
 
-To determine the exact bottleneck behind the ~13s 10,000-recipient ingestion latency, we profiled database execution against our remote serverless PostgreSQL instance (Neon AWS US-East) from our local dev machine (India) using `npm run profile:ingestion` (`src/scripts/profile-ingestion.ts`). 
+To eliminate the transatlantic round-trip bottleneck, we moved PostgreSQL array unnesting (`INSERT ... SELECT ... FROM unnest(...)`) into the **production path** in `emailRepository.ts`, keeping the old chunked implementation behind `useChunkedStrategy` for benchmarking.
 
-With a measured ping round-trip time (RTT) of **~569 ms**, the 10 sequential chunked round trips in the interactive transaction were responsible for ~9.73s of database time. By replacing chunking with PostgreSQL array unnesting (`INSERT ... SELECT ... FROM unnest(...)`), we collapsed 10 round trips into a **single network trip** using only 12 array parameters:
+Using `npm --prefix backend run profile:ingestion`, we ran **5 runs each** against Neon PostgreSQL (measured ping RTT: min 282.7ms, median 344.0ms, max 622.1ms). All numbers below are raw empirical measurements:
 
-| Pipeline Strategy | 1,000 Recipients | 10,000 Recipients (DB Write) | 10,000 End-to-End API | Architectural Trade-offs & Mechanics |
-| :--- | :---: | :---: | :---: | :--- |
-| **Prisma `$transaction` (`DB_CHUNK_SIZE = 1000`)** *(Current Baseline)* | **~1.78s** | **9.73s** *(measured)* | **~13.26s** | **Type Safety & Parameter Guard**: Splits batch into 1,000-slice arrays ($1,000 \times 10 = 10,000$ params) safely below PostgreSQL's 65,535 wire limit. Over remote transatlantic connections (~569ms RTT), 10 sequential roundtrips dominate the duration. |
-| **Single-Roundtrip Array Unnesting (`unnest`)** *(Empirically Profiled)* | **~0.42s** | **1.71s** *(measured)* | **~4.8s** | **Single Round-Trip Optimization**: Uses `INSERT INTO "Email" SELECT ... FROM unnest($1::text[], ...)` to pass columnar arrays. Uses only 12 parameters total ($12 \ll 65,535$), eliminating 9 sequential transatlantic round trips for a **5.7x database speedup** (`npm run profile:ingestion`). |
-| **Streaming PostgreSQL `COPY` (`pg-copy-streams`)** *(Enterprise Hypothesis)* | **~0.3s** | **~0.9s** *(projected)* | **~2.5s** | **Zero-Parse Binary Streaming**: Bypasses SQL query planning and ORM overhead by streaming raw tuples directly into PostgreSQL via `COPY "Email" FROM STDIN`. Combined with a co-located database, eliminates wire latency completely. |
+#### 1. Database-Level Transaction (`createBatchWithEmails`)
+- **1,000 Recipients (5 runs)**:
+  - Chunked Baseline: Min = `1743.8ms` | Median = `2430.3ms` | Max = `4075.6ms`
+  - Unnest Query: Min = `1289.2ms` | Median = `1474.7ms` | Max = `1817.8ms`
+  - **Speedup**: **1.65x faster**
+- **10,000 Recipients (5 runs)**:
+  - Chunked Baseline: Min = `7965.9ms` | Median = `8479.7ms` | Max = `8647.8ms`
+  - Unnest Query: Min = `2026.4ms` | Median = `2243.9ms` | Max = `2453.8ms`
+  - **Speedup**: **3.78x faster** (collapsed DB write from **8.48s** median down to **2.24s** median)
+
+#### 2. End-to-End API Pipeline (`scheduleEmails`: Validation + DB + BullMQ + Enqueued)
+- **1,000 Recipients (5 runs)**:
+  - Chunked Baseline: Min = `2946.4ms` | Median = `3269.1ms` | Max = `4633.4ms`
+  - Unnest Pipeline: Min = `2501.3ms` | Median = `2572.7ms` | Max = `2886.3ms`
+  - **Speedup**: **1.27x faster**
+- **10,000 Recipients (5 runs)**:
+  - Chunked Baseline: Min = `19217.1ms` | Median = `19639.2ms` | Max = `22154.7ms`
+  - Unnest Pipeline: Min = `12688.1ms` | Median = `13091.6ms` | Max = `16620.5ms`
+  - **Speedup**: **1.50x faster** (collapsed full end-to-end API latency from **19.64s** median down to **13.09s** median)
 
 > [!TIP]
-> **Reproducibility**: Run `npm --prefix backend run profile:ingestion` to execute the comparative benchmark script directly against your database and verify the baseline chunking vs. `unnest()` latency.
+> **Reproducibility**: Run `npm --prefix backend run profile:ingestion` to execute all 20 benchmark runs (5 runs $\times$ 2 batch sizes $\times$ 2 strategies) against your database.
 
-### Worker Throughput & Rate Control Dynamics
+---
+
+### 🛡️ Multi-Worker Concurrency & Worker Crash Isolation (`npm run test:multiworker`)
+
+To verify race-condition immunity, at-least-once delivery boundaries, and crash recovery, HyperSend includes a multi-process test harness (`npm --prefix backend run test:multiworker`):
+
+```bash
+npm --prefix backend run test:multiworker
+```
+
+The harness boots 3 isolated worker child processes and verifies delivery using dual tracking: PostgreSQL rows (`status = 'sent'`) and an atomic Redis dispatch ledger (`ledger:dispatches` and `ledger:distinct_emails`).
+
+#### Empirical Multi-Worker Test Results:
+
+| Scenario / Test | Scheduled | Marked Sent (DB) | Dispatches in Ledger | Distinct Email IDs | Duplicate Dispatches | Recovery Time | Total Time |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **TEST 1: 3-Worker Concurrency** *(Normal execution)* | 40 | 40 | 40 | 40 | **0** | N/A | **32.67s** |
+| **TEST 2: Worker Mid-Run Crash** *(`kill -9` / SIGKILL on Worker 2)* | 40 | 40 | 40 | 40 | **0** | **34.13s** | **45.00s** |
+
+**Crash Recovery Protocol**: When Worker 2 (PID: 13232) was abruptly terminated via `kill -9` after sending 2 emails, its in-flight locked jobs were isolated. Surviving workers (Worker 1 & Worker 3) detected the orphaned jobs via `BULLMQ_STALLED_INTERVAL_MS` (4s) and `STALE_PROCESSING_MS` (5s), reclaimed the database processing claims, and safely completed all 40 emails with **zero lost updates and zero duplicate dispatches**.
 1. **Non-blocking API Design**: The API server immediately responds with `{ batchId, count }` after queue dispatch. Dispatching emails over SMTP is handled purely asynchronously by decoupled worker processes.
 2. **Buffer Saturation Prevention**: Bulk inserts and BullMQ enqueuing are chunked in slices of 1,000 to keep memory flat and prevent Redis pipeline timeouts.
 3. **Throughput Scaling & Dual Rate Boundaries**:
