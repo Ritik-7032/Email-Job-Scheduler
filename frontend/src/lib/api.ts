@@ -114,6 +114,12 @@ class ApiClient {
       `/api/emails/sent?limit=${limit}&offset=${offset}`
     );
   }
+
+  async purgeQueue(): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/api/emails/purge', {
+      method: 'POST',
+    });
+  }
 }
 
 export const api = new ApiClient();

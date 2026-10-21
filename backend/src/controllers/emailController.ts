@@ -11,6 +11,7 @@ import {
 } from '../services/emailService.js';
 import { emailQueue } from '../queue/emailQueue.js';
 import { env } from '../config/env.js';
+import { prisma } from '../lib/prisma.js';
 
 export async function handleScheduleEmails(
   req: AuthenticatedRequest,
@@ -85,5 +86,57 @@ export async function handleGetQueueStats(
     next(err);
   }
 }
+
+export async function handlePurgeQueue(
+  _req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const countsBefore = await emailQueue.getJobCounts(
+      'waiting',
+      'active',
+      'delayed',
+      'completed',
+      'failed'
+    );
+
+    // 1. Drain waiting and delayed jobs from BullMQ
+    await emailQueue.drain(true);
+    try {
+      await emailQueue.clean(0, 50000, 'delayed');
+      await emailQueue.clean(0, 50000, 'wait');
+      await emailQueue.clean(0, 50000, 'active');
+    } catch {
+      // Non-fatal if clean is unsupported or already empty
+    }
+
+    // 2. Clear scheduled emails from PostgreSQL so reconciler won't re-enqueue them
+    const deleted = await prisma.email.deleteMany({
+      where: {
+        status: 'scheduled',
+      },
+    });
+
+    const countsAfter = await emailQueue.getJobCounts(
+      'waiting',
+      'active',
+      'delayed',
+      'completed',
+      'failed'
+    );
+
+    res.json({
+      success: true,
+      message: 'Queue and scheduled emails cleared successfully',
+      cleared: countsBefore,
+      deletedScheduledFromDb: deleted.count,
+      remaining: countsAfter,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 
 

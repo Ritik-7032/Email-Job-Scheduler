@@ -5,7 +5,7 @@ import { ComposeView } from '../components/ComposeView.tsx';
 import { EmailDetailView } from '../components/EmailDetailView.tsx';
 import { api } from '../lib/api.ts';
 import { formatScheduledTimePill } from '../lib/dateUtils.ts';
-import { Search, SlidersHorizontal, RefreshCw, Star, Clock, ChevronLeft, ChevronRight, AlertCircle, Inbox } from 'lucide-react';
+import { Search, SlidersHorizontal, RefreshCw, Star, Clock, ChevronLeft, ChevronRight, AlertCircle, Inbox, Trash2 } from 'lucide-react';
 import { useToast } from '../components/Toast.tsx';
 
 interface DashboardProps {
@@ -122,6 +122,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return () => clearInterval(interval);
   }, [activeTab, scheduledOffset, sentOffset, fetchScheduled, fetchSent, refreshCounts]);
 
+  const [isPurging, setIsPurging] = useState(false);
+
   const handleRefresh = () => {
     if (activeTab === 'scheduled') {
       fetchScheduled(scheduledOffset);
@@ -129,6 +131,28 @@ export const Dashboard: React.FC<DashboardProps> = ({
       fetchSent(sentOffset);
     }
     refreshCounts();
+  };
+
+  const handlePurgeQueue = async () => {
+    if (
+      !window.confirm(
+        'Clear stuck/benchmark queue backlog? This will flush waiting jobs so your new emails send immediately.'
+      )
+    ) {
+      return;
+    }
+    setIsPurging(true);
+    try {
+      const res = await api.purgeQueue();
+      addToast(res.message || 'Queue backlog cleared successfully', 'success');
+      handleRefresh();
+      refreshCounts();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to purge queue';
+      addToast(msg, 'error');
+    } finally {
+      setIsPurging(false);
+    }
   };
 
   const handleScheduleSuccess = () => {
@@ -231,6 +255,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
               title="Refresh"
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </button>
+            <button
+              type="button"
+              onClick={handlePurgeQueue}
+              disabled={isPurging}
+              className="px-2.5 py-1 text-[11px] font-medium text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-full transition-colors flex items-center gap-1 border border-rose-200"
+              title="Clear stuck Redis queue backlog"
+            >
+              <Trash2 className="w-3 h-3" />
+              <span>{isPurging ? 'Clearing...' : 'Clear Backlog'}</span>
             </button>
           </div>
         </div>
