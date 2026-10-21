@@ -11,6 +11,7 @@
     "requeue": "tsx src/scripts/requeue.ts",
     "benchmark": "tsx src/scripts/benchmark.ts",
     "profile:ingestion": "tsx src/scripts/profile-ingestion.ts",
+    "test:multiworker": "tsx src/scripts/test-multiworker.ts",
     "build": "prisma generate && tsc",
     "start": "node dist/server.js",
     "start:worker": "node dist/worker.js",

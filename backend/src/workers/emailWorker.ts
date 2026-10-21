@@ -289,6 +289,12 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
         'EX',
         86400 * 7 // 7 days retention
       );
+      if (typeof redisClient.rpush === 'function') {
+        await redisClient.rpush('ledger:dispatches', emailId);
+      }
+      if (typeof redisClient.sadd === 'function') {
+        await redisClient.sadd('ledger:distinct_emails', emailId);
+      }
     } catch (redisErr) {
       logger.warn({ emailId, err: redisErr }, 'Failed to record dispatch in Redis ledger');
     }
@@ -330,7 +336,21 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
 
 import { parseRedisOptions } from '../lib/redis.js';
 
-export function createEmailWorker(): Worker<ScheduleJobData> {
+export interface EmailWorkerOptions {
+  concurrency?: number;
+  lockDuration?: number;
+  stalledInterval?: number;
+}
+
+export function createEmailWorker(opts?: EmailWorkerOptions): Worker<ScheduleJobData> {
+  const lockDuration =
+    opts?.lockDuration ??
+    (process.env.BULLMQ_LOCK_DURATION_MS ? Number(process.env.BULLMQ_LOCK_DURATION_MS) : 30000);
+  const stalledInterval =
+    opts?.stalledInterval ??
+    (process.env.BULLMQ_STALLED_INTERVAL_MS ? Number(process.env.BULLMQ_STALLED_INTERVAL_MS) : 30000);
+  const concurrency = opts?.concurrency ?? env.WORKER_CONCURRENCY;
+
   const worker = new Worker<ScheduleJobData>(
     EMAIL_QUEUE_NAME,
     async (job, token) => {
@@ -338,7 +358,9 @@ export function createEmailWorker(): Worker<ScheduleJobData> {
     },
     {
       connection: parseRedisOptions(env.REDIS_URL),
-      concurrency: env.WORKER_CONCURRENCY,
+      concurrency,
+      lockDuration,
+      stalledInterval,
     }
   );
 
