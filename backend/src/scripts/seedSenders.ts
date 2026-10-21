@@ -6,21 +6,32 @@ import { logger } from '../lib/logger.js';
 export async function seedSendersIfNeeded(): Promise<number> {
   const senders = await prisma.sender.findMany();
 
-  // 1. Verify existing Ethereal sender accounts to ensure they haven't expired on Ethereal's server
-  for (const sender of senders) {
-    if (sender.email.endsWith('@ethereal.email')) {
-      const transporter = nodemailer.createTransport({
-        host: env.SMTP_HOST,
-        port: env.SMTP_PORT,
-        secure: env.SMTP_SECURE,
-        auth: {
-          user: sender.smtpUser,
-          pass: sender.smtpPassword,
-        },
-      });
+  // In simulated demo mode, senders are mock accounts: skip slow outbound network verify calls
+  if (env.DEMO_SIMULATE_SMTP || process.env.DEMO_SIMULATE_SMTP === 'true') {
+    if (senders.length >= env.SENDER_COUNT) {
+      return 0;
+    }
+  }
 
-      try {
-        await transporter.verify();
+  // 1. Verify existing Ethereal sender accounts to ensure they haven't expired on Ethereal's server
+  if (!env.DEMO_SIMULATE_SMTP && process.env.DEMO_SIMULATE_SMTP !== 'true') {
+    for (const sender of senders) {
+      if (sender.email.endsWith('@ethereal.email')) {
+        const transporter = nodemailer.createTransport({
+          host: env.SMTP_HOST,
+          port: env.SMTP_PORT,
+          secure: env.SMTP_SECURE,
+          auth: {
+            user: sender.smtpUser,
+            pass: sender.smtpPassword,
+          },
+          connectionTimeout: 2000,
+          greetingTimeout: 2000,
+          socketTimeout: 3000,
+        });
+
+        try {
+          await transporter.verify();
       } catch {
         logger.warn(
           { senderId: sender.id, email: sender.email },
@@ -46,6 +57,7 @@ export async function seedSendersIfNeeded(): Promise<number> {
       }
     }
   }
+}
 
   // 2. Seed any missing senders up to SENDER_COUNT
   const existing = await prisma.sender.count();

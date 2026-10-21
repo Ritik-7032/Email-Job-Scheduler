@@ -73,18 +73,22 @@ export const formatBodyToHtml = (content: string): string => {
 function getOrCreateTransporter(sender: { id: string; smtpUser: string; smtpPassword: string }): nodemailer.Transporter {
   let transporter = transporterCache.get(sender.id);
   if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: env.SMTP_HOST,
-      port: env.SMTP_PORT,
-      secure: env.SMTP_SECURE,
-      auth: {
-        user: sender.smtpUser,
-        pass: sender.smtpPassword,
-      },
-      connectionTimeout: 15000,
-      greetingTimeout: 15000,
-      socketTimeout: 30000,
-    });
+    if (env.DEMO_SIMULATE_SMTP) {
+      transporter = nodemailer.createTransport({ jsonTransport: true });
+    } else {
+      transporter = nodemailer.createTransport({
+        host: env.SMTP_HOST,
+        port: env.SMTP_PORT,
+        secure: env.SMTP_SECURE,
+        auth: {
+          user: sender.smtpUser,
+          pass: sender.smtpPassword,
+        },
+        connectionTimeout: 5000,
+        greetingTimeout: 5000,
+        socketTimeout: 10000,
+      });
+    }
     transporterCache.set(sender.id, transporter);
   }
   return transporter;
@@ -206,6 +210,9 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
         messageId: deterministicMessageId,
         attachments: mimeAttachments.length > 0 ? mimeAttachments : undefined,
       });
+      if (!sendInfo.messageId) {
+        sendInfo.messageId = deterministicMessageId;
+      }
     } catch (smtpErr: unknown) {
       const err = smtpErr instanceof Error ? smtpErr : new Error(String(smtpErr));
       const errMsg = err.message.toLowerCase();
@@ -215,13 +222,11 @@ export async function processEmailJob(job: Job<ScheduleJobData>, token?: string)
         errMsg.includes('econnrefused') ||
         errMsg.includes('ehostunreach') ||
         errMsg.includes('greeting');
-      const isDemoEnvironment =
-        env.DEMO_SIMULATE_SMTP ||
-        process.env.DEMO_SIMULATE_SMTP === 'true' ||
+      const isDemoAccount =
         sender.email.includes('ethereal.email') ||
         Boolean(email.user?.googleId?.startsWith('demo-'));
 
-      if (isDemoEnvironment && (isConnectionTimeout || env.DEMO_SIMULATE_SMTP)) {
+      if (isDemoAccount && isConnectionTimeout) {
         logger.warn(
           { emailId, err: err.message },
           'SMTP connection throttled or unreachable in cloud sandbox: executing simulated Ethereal delivery'

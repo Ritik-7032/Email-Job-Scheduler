@@ -21,14 +21,7 @@ async function bootstrap() {
   // setImmediate ensures the HTTP listener port binds on tick 0 so cloud platform
   // health-checks pass instantly before queue worker and DB reconciler bootstrap.
   setImmediate(async () => {
-    // 1. Auto-seed sender accounts if database has none (e.g. fresh Docker / staging setup)
-    try {
-      await seedSendersIfNeeded();
-    } catch (err) {
-      logger.warn({ err }, 'Non-fatal: Auto-seeding senders deferred or offline');
-    }
-
-    // 2. Start queue worker if not running in standalone worker container
+    // 1. Start queue worker immediately if not running in standalone worker container
     if (!isSeparateWorker) {
       try {
         createEmailWorker();
@@ -39,6 +32,11 @@ async function bootstrap() {
     } else {
       logger.info('API server running with decoupled worker process (SEPARATE_WORKER=true)');
     }
+
+    // 2. Auto-seed sender accounts asynchronously in background without blocking worker dispatch
+    seedSendersIfNeeded().catch((err) => {
+      logger.warn({ err }, 'Non-fatal: Auto-seeding senders deferred or offline');
+    });
 
     // 3. Startup reconciliation of stale processing records and orphaned queued emails
     runStartupRecovery()
