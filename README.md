@@ -96,7 +96,7 @@ The system schedules and sends email batches with per-sender minimum delays and 
 
 - **Backend**: Node.js, TypeScript, Express, BullMQ, ioredis, PostgreSQL, Prisma, Nodemailer, Zod, google-auth-library, jsonwebtoken, Pino.
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Lucide icons, Nginx.
-- **Testing**: Vitest, Supertest (56/56 Unit & Integration Tests across 7 test suites).
+- **Testing**: Vitest, Supertest (60/60 Unit & Integration Tests across 7 test suites).
 - **Infra**: Docker Compose (Full-stack containerization with isolated network & persistent volumes).
 
 ---
@@ -365,7 +365,7 @@ HyperSend provides real-time visibility into queue depth, concurrency limits, an
    - Creates a `Batch` record.
    - Computes staggered `scheduledAt = startAt + index * delayMs` for each recipient.
    - Assigns senders round-robin across active senders in the database.
-   - Ingests `Email` records into PostgreSQL in chunks of 1,000 (`DB_CHUNK_SIZE = 1000`) to prevent parameter overflow and high peak memory.
+   - Ingests all Email records in a single round-trip using `INSERT ... SELECT FROM unnest(...)`; the chunked path remains as a fallback.
 3. Enqueues jobs to BullMQ via `queue.addBulk()` in chunks of 1,000 with `jobId = email.id` and `delay = max(0, scheduledAt - now)`.
 4. Marks `enqueuedAt = now` in PostgreSQL in chunks of 1,000 and returns `{ batchId, count }`.
 
@@ -464,6 +464,9 @@ Using `npm --prefix backend run profile:ingestion`, we ran **5 runs each** again
 > [!TIP]
 > **Reproducibility**: Run `npm --prefix backend run profile:ingestion` to execute all 20 benchmark runs (5 runs $\times$ 2 batch sizes $\times$ 2 strategies) against your database.
 
+> [!NOTE]
+> **Next Optimization Opportunity**: In the ~13.09s end-to-end API pipeline for 10,000 recipients, database insertion now accounts for only ~2.24s. The remaining ~10.8s bottleneck is dominated by BullMQ `addBulk()` payload serialization over the network and chunked `enqueuedAt` updates. A single `UPDATE "Email" SET "enqueuedAt" = now() WHERE "batchId" = $1` can eliminate the chunked update round-trips entirely.
+
 ---
 
 ### 🛡️ Multi-Worker Concurrency & Worker Crash Isolation (`npm run test:multiworker`)
@@ -483,8 +486,12 @@ The harness boots 3 isolated worker child processes and verifies delivery using 
 | **TEST 1: 3-Worker Concurrency** *(Normal execution)* | 40 | 40 | 40 | 40 | **0** | N/A | **32.67s** |
 | **TEST 2: Worker Mid-Run Crash** *(`kill -9` / SIGKILL on Worker 2)* | 40 | 40 | 40 | 40 | **0** | **34.13s** | **45.00s** |
 
-**Crash Recovery Protocol**: When Worker 2 (PID: 13232) was abruptly terminated via `kill -9` after sending 2 emails, its in-flight locked jobs were isolated. Surviving workers (Worker 1 & Worker 3) detected the orphaned jobs via `BULLMQ_STALLED_INTERVAL_MS` (4s) and `STALE_PROCESSING_MS` (5s), reclaimed the database processing claims, and safely completed all 40 emails with **zero lost updates and zero duplicate dispatches**.
-1. **Non-blocking API Design**: The API server immediately responds with `{ batchId, count }` after queue dispatch. Dispatching emails over SMTP is handled purely asynchronously by decoupled worker processes.
+**Crash Recovery Protocol**: When Worker 2 (PID: 13232) was abruptly terminated via `kill -9` after sending 2 emails, its in-flight locked jobs were isolated. Surviving workers (Worker 1 & Worker 3) detected the orphaned jobs via `BULLMQ_STALLED_INTERVAL_MS` (4s) and `STALE_PROCESSING_MS` (5s), reclaimed the database processing claims, and safely completed all 40 emails with **zero lost updates and zero duplicate dispatches** *(single run of 40 emails with tuned recovery timers; delivery remains at-least-once by design, so this is not a guarantee)*.
+
+---
+
+### Worker Throughput & Rate Control Dynamics
+1. **Asynchronous SMTP Dispatch**: The API responds once the batch is durably stored and enqueued (see latency table); SMTP dispatch is fully asynchronous.
 2. **Buffer Saturation Prevention**: Bulk inserts and BullMQ enqueuing are chunked in slices of 1,000 to keep memory flat and prevent Redis pipeline timeouts.
 3. **Throughput Scaling & Dual Rate Boundaries**:
    - **Burst Dispatch Rate (Inter-Email Delay)**: Staggering is calculated per sender account (`slot = Math.floor(index / senders.length)`). At the configured `DEFAULT_DELAY_MS = 2000` (2 seconds), each sender spaces its dispatches by 2 seconds. Across 5 active senders dispatching in parallel with `WORKER_CONCURRENCY = 5`, this achieves a peak burst rate of **2.5 emails/second** (`5 senders / 2 sec`).
