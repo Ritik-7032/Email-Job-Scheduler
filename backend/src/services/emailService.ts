@@ -11,7 +11,7 @@ import { logger } from '../lib/logger.js';
 
 export async function scheduleEmails(
   userId: string,
-  input: ScheduleEmailInput
+  input: ScheduleEmailInput & { useChunkedStrategy?: boolean }
 ): Promise<{ batchId: string; count: number }> {
   const senders = await getAllSenders();
   if (senders.length === 0) {
@@ -29,6 +29,7 @@ export async function scheduleEmails(
     delayMs: input.delayMs,
     hourlyLimit: input.hourlyLimit,
     senders,
+    useChunkedStrategy: input.useChunkedStrategy,
   });
 
   const now = Date.now();
